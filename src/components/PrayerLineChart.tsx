@@ -1,6 +1,6 @@
 "use client"
 
-import { TrendingUp, Sunrise, Sun, CloudSun, Sunset, Moon, Clock } from "lucide-react"
+import { TrendingUp, Sunrise, Sun, CloudSun, Sunset, Moon, Clock, User, Users2, Ban, Flower2 } from "lucide-react"
 import { CartesianGrid, Line, LineChart, XAxis } from "recharts"
 import { useTranslation } from "react-i18next"
 
@@ -35,26 +35,35 @@ export function PrayerLineChart({ data, activeStatus = "all", gender }: PrayerLi
   const { t } = useTranslation()
 
   const chartConfig = {
-    congregation: {
-      label: t("status_congregation"),
-      color: "#10b981",
-    },
+    ...(gender === "male" ? {
+      congregation: {
+        label: t("status_congregation"),
+        color: "#10b981",
+        icon: Users2,
+      }
+    } : {}),
     prayed: {
       label: t("status_prayed"),
       color: gender === "female" ? "#10b981" : "#3b82f6",
+      icon: User,
     },
     delayed: {
       label: t("status_delayed"),
       color: "#ef4444",
+      icon: Clock,
     },
     missed: {
       label: t("status_missed"),
       color: "#000000",
+      icon: Ban,
     },
-    menstruation: {
-      label: t("status_menstruation"),
-      color: "#ec4899",
-    },
+    ...(gender === "female" ? {
+      menstruation: {
+        label: t("status_menstruation"),
+        color: "#ec4899",
+        icon: Flower2,
+      }
+    } : {}),
   } satisfies ChartConfig
 
   return (
@@ -148,6 +157,18 @@ export function PrayerLineChart({ data, activeStatus = "all", gender }: PrayerLi
             )}
           </LineChart>
         </ChartContainer>
+
+        <div className="flex flex-wrap items-center justify-center gap-4 mt-4">
+          {Object.entries(chartConfig).map(([key, config]) => {
+            if (key === 'value') return null;
+            const Icon = config.icon;
+            return (
+              <div key={key} className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                {Icon && <Icon className="h-5 w-5" style={{ color: config.color }} />}
+              </div>
+            );
+          })}
+        </div>
       </CardContent>
     </Card>
   )

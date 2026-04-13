@@ -108,7 +108,8 @@ import {
   Activity,
   Hexagon,
   CircleDashed,
-  AlignEndHorizontal
+  AlignEndHorizontal,
+  Loader2
 } from "lucide-react";
 import { cn } from "./lib/utils";
 import "./i18n";
@@ -146,9 +147,11 @@ export default function App() {
   const [allStatsRecords, setAllStatsRecords] = useState<PrayerRecord[] | null>(null);
   const [statsPeriod, setStatsPeriod] = useState<number>(7);
   const [activeChartType, setActiveChartType] = useState<string>("donut");
+  const [activePrayer, setActivePrayer] = useState<string>("all");
   const [statsStatus, setStatsStatus] = useState<string>("all");
   const [isGeneratingMock, setIsGeneratingMock] = useState(false);
   const [isCheckingGender, setIsCheckingGender] = useState(true);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [isShareScreenOpen, setIsShareScreenOpen] = useState(false);
   const statsNeedsRefresh = useRef(true);
@@ -156,9 +159,31 @@ export default function App() {
 
   const [calendarWeekStart, setCalendarWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [calendarView, setCalendarView] = useState<"weekly" | "monthly">("weekly");
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [currentMonth, setCurrentMonth] = useState(startOfMonth(new Date()));
   const [weeklyRecords, setWeeklyRecords] = useState<Record<string, PrayerRecord>>({});
   const [currentStreak, setCurrentStreak] = useState<number>(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX - touchEndX;
+
+    if (Math.abs(diff) > 50) { // minimum swipe distance
+      if (diff > 0) {
+        // swipe left -> go to monthly
+        setCalendarView("monthly");
+      } else {
+        // swipe right -> go to weekly
+        setCalendarView("weekly");
+      }
+    }
+    setTouchStartX(null);
+  };
 
   const calculateStreak = async () => {
     if (!user) return;
@@ -611,6 +636,7 @@ export default function App() {
       return; // Skip fetching if we already have today's times
     }
 
+    setIsLoadingLocation(true);
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
@@ -622,14 +648,17 @@ export default function App() {
           } else {
             setLocationError(t("location_error"));
           }
+          setIsLoadingLocation(false);
         },
         (error) => {
           console.error("Geolocation error:", error);
           setLocationError(t("location_error"));
+          setIsLoadingLocation(false);
         },
       );
     } else {
       setLocationError(t("location_error"));
+      setIsLoadingLocation(false);
     }
   };
 
@@ -915,10 +944,15 @@ export default function App() {
                 <div className="flex flex-col items-end gap-2">
                   <button 
                     onClick={() => fetchLocationAndTimes(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/50 border border-muted/50 text-[10px] font-bold text-muted-foreground hover:text-foreground hover:bg-muted transition-all active:scale-95"
+                    disabled={isLoadingLocation}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/50 border border-muted/50 text-[10px] font-bold text-muted-foreground hover:text-foreground hover:bg-muted transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
                   >
-                    <MapPin className="w-3 h-3" /> 
-                    {locationError ? <span className="text-rose-500">Error</span> : "AUTO"}
+                    {isLoadingLocation ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <MapPin className="w-3 h-3" /> 
+                    )}
+                    {locationError ? <span className="text-rose-500">Error</span> : isLoadingLocation ? "..." : "AUTO"}
                   </button>
                   {currentStreak > 0 && (
                     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-600 dark:text-orange-500 text-xs font-bold shadow-sm">
@@ -970,7 +1004,11 @@ export default function App() {
         )}
 
         {activeTab === "calendar" && (
-          <div className="space-y-6">
+          <div 
+            className="space-y-6"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
             <div className="flex flex-col space-y-4">
               <div className="flex items-center justify-between">
                 <h1 className="text-3xl font-bold tracking-tight text-foreground">
@@ -1327,65 +1365,49 @@ export default function App() {
               <div className="flex flex-col space-y-4 w-full">
                 {/* 1. Chart Type Filter (Text & Icons combined for synced scrolling) */}
                 <div className="w-full overflow-x-auto no-scrollbar pb-2">
-                  <div className="flex flex-col space-y-2 w-max px-1">
-                    <Tabs 
-                      value={activeChartType} 
-                      onValueChange={setActiveChartType}
-                      className="w-full"
-                    >
-                      <TabsList className="flex h-12 w-max items-center justify-start gap-3 p-1 bg-muted/50 rounded-xl">
-                        {[
-                          { value: "donut", label: "Donut" },
-                          { value: "pie", label: "Pie" },
-                          { value: "bar", label: "Bar" },
-                          { value: "stacked", label: "Stacked" },
-                          { value: "line", label: "Line" },
-                          { value: "area", label: "Area" },
-                          { value: "radar1", label: "Radar 1" },
-                          { value: "radar2", label: "Radar 2" },
-                        ].map((tab) => (
-                          <TabsTrigger 
-                            key={tab.value}
-                            value={tab.value} 
-                            className="w-16 h-full px-0 text-[10px] font-bold uppercase tracking-tighter data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all"
-                          >
-                            {tab.label}
-                          </TabsTrigger>
-                        ))}
-                      </TabsList>
-                    </Tabs>
-
-                    <div className="flex items-center gap-3 w-max px-1">
-                      {[
-                        { value: "donut", icon: CircleDashed, color: "text-indigo-500", bg: "bg-indigo-50" },
-                        { value: "pie", icon: PieChart, color: "text-blue-500", bg: "bg-blue-50" },
-                        { value: "bar", icon: BarChart3, color: "text-emerald-500", bg: "bg-emerald-50" },
-                        { value: "stacked", icon: AlignEndHorizontal, color: "text-amber-500", bg: "bg-amber-50" },
-                        { value: "line", icon: LineChart, color: "text-rose-500", bg: "bg-rose-50" },
-                        { value: "area", icon: AreaChart, color: "text-purple-500", bg: "bg-purple-50" },
-                        { value: "radar1", icon: Activity, color: "text-cyan-500", bg: "bg-cyan-50" },
-                        { value: "radar2", icon: Hexagon, color: "text-teal-500", bg: "bg-teal-50" },
-                      ].map((item) => (
-                        <button
-                          key={item.value}
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setActiveChartType(item.value);
-                          }}
-                          className={cn(
-                            "flex flex-col items-center justify-center w-16 h-16 rounded-2xl transition-all border",
-                            activeChartType === item.value 
-                              ? "border-primary bg-primary/5 shadow-sm" 
-                              : "border-muted/60 bg-muted/20 hover:bg-muted/40"
-                          )}
-                        >
+                  <div className="flex items-center gap-3 w-max px-1">
+                    {[
+                      { value: "donut", label: "Donut", icon: CircleDashed, color: "text-indigo-500", bg: "bg-indigo-50" },
+                      { value: "pie", label: "Pie", icon: PieChart, color: "text-blue-500", bg: "bg-blue-50" },
+                      { value: "bar", label: "Bar", icon: BarChart3, color: "text-emerald-500", bg: "bg-emerald-50" },
+                      { value: "stacked", label: "Stacked", icon: AlignEndHorizontal, color: "text-amber-500", bg: "bg-amber-50" },
+                      { value: "line", label: "Line", icon: LineChart, color: "text-rose-500", bg: "bg-rose-50" },
+                      { value: "area", label: "Area", icon: AreaChart, color: "text-purple-500", bg: "bg-purple-50" },
+                      { value: "radar1", label: "Radar 1", icon: Activity, color: "text-cyan-500", bg: "bg-cyan-50" },
+                      { value: "radar2", label: "Radar 2", icon: Hexagon, color: "text-teal-500", bg: "bg-teal-50" },
+                    ].map((item) => (
+                      <button
+                        key={item.value}
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setActiveChartType(item.value);
+                        }}
+                        className={cn(
+                          "flex flex-col items-center justify-center w-[72px] gap-2 transition-all",
+                          activeChartType === item.value ? "opacity-100" : "opacity-70 hover:opacity-100"
+                        )}
+                      >
+                        <div className={cn(
+                          "w-full h-8 flex items-center justify-center text-[10px] font-bold uppercase tracking-tighter rounded-lg transition-all",
+                          activeChartType === item.value 
+                            ? "bg-background shadow-sm border border-border/50 text-foreground" 
+                            : "bg-muted/50 text-muted-foreground hover:bg-muted/80"
+                        )}>
+                          {item.label}
+                        </div>
+                        <div className={cn(
+                          "flex items-center justify-center w-full h-16 rounded-2xl transition-all border",
+                          activeChartType === item.value 
+                            ? "border-primary bg-primary/5 shadow-sm" 
+                            : "border-muted/60 bg-muted/20 hover:bg-muted/40"
+                        )}>
                           <div className={cn("p-2 rounded-xl", activeChartType === item.value ? item.bg : "bg-transparent")}>
                             <item.icon className={cn("w-6 h-6", item.color)} />
                           </div>
-                        </button>
-                      ))}
-                    </div>
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -1468,6 +1490,45 @@ export default function App() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+                {/* 4. Prayer Filter */}
+                <AnimatePresence>
+                  {["donut", "pie", "line", "area"].includes(activeChartType) && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="w-full overflow-hidden"
+                    >
+                      <Tabs 
+                        value={activePrayer} 
+                        onValueChange={setActivePrayer}
+                        className="w-full"
+                      >
+                        <TabsList className="grid w-full grid-cols-6 h-14 p-1 bg-muted/50 rounded-xl">
+                          <TabsTrigger value="all" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                            <LayoutGrid className="w-5 h-5 text-slate-500" />
+                          </TabsTrigger>
+                          <TabsTrigger value="fajr" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                            <Sunrise className="w-5 h-5 text-amber-500" />
+                          </TabsTrigger>
+                          <TabsTrigger value="dhuhr" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                            <Sun className="w-5 h-5 text-orange-500" />
+                          </TabsTrigger>
+                          <TabsTrigger value="asr" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                            <CloudSun className="w-5 h-5 text-amber-600" />
+                          </TabsTrigger>
+                          <TabsTrigger value="maghrib" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                            <Sunset className="w-5 h-5 text-indigo-400" />
+                          </TabsTrigger>
+                          <TabsTrigger value="isha" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                            <Moon className="w-5 h-5 text-slate-500" />
+                          </TabsTrigger>
+                        </TabsList>
+                      </Tabs>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
 
@@ -1486,14 +1547,24 @@ export default function App() {
             ) : statsData.length > 0 ? (
               <div className="space-y-6">
                 <div className="p-2">
-                  {activeChartType === "donut" && <PrayerDonutChart data={statsData} gender={gender} />}
-                  {activeChartType === "pie" && <PrayerPieChart data={statsData} gender={gender} />}
-                  {activeChartType === "bar" && <PrayerBarChart data={statsData} activeStatus={statsStatus} gender={gender} />}
-                  {activeChartType === "stacked" && <PrayerStackedBarChart data={statsData} gender={gender} />}
-                  {activeChartType === "line" && <PrayerLineChart data={statsData} activeStatus={statsStatus} gender={gender} />}
-                  {activeChartType === "area" && <PrayerAreaChart data={statsData} activeStatus={statsStatus} gender={gender} />}
-                  {activeChartType === "radar1" && <PrayerRadarChart data={statsData} activeStatus={statsStatus} gender={gender} />}
-                  {activeChartType === "radar2" && <PrayerRadarChart2 data={statsData} activeStatus={statsStatus} gender={gender} />}
+                  {(() => {
+                    const filteredStatsData = activePrayer === "all" 
+                      ? statsData 
+                      : statsData.filter(d => d.prayer === t(activePrayer));
+                    
+                    return (
+                      <>
+                        {activeChartType === "donut" && <PrayerDonutChart data={filteredStatsData} gender={gender} />}
+                        {activeChartType === "pie" && <PrayerPieChart data={filteredStatsData} gender={gender} />}
+                        {activeChartType === "bar" && <PrayerBarChart data={statsData} activeStatus={statsStatus} gender={gender} />}
+                        {activeChartType === "stacked" && <PrayerStackedBarChart data={statsData} gender={gender} />}
+                        {activeChartType === "line" && <PrayerLineChart data={filteredStatsData} activeStatus={statsStatus} gender={gender} />}
+                        {activeChartType === "area" && <PrayerAreaChart data={filteredStatsData} activeStatus={statsStatus} gender={gender} />}
+                        {activeChartType === "radar1" && <PrayerRadarChart data={statsData} activeStatus={statsStatus} gender={gender} />}
+                        {activeChartType === "radar2" && <PrayerRadarChart2 data={statsData} activeStatus={statsStatus} gender={gender} />}
+                      </>
+                    );
+                  })()}
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3">

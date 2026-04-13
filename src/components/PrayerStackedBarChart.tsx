@@ -30,30 +30,32 @@ export function PrayerStackedBarChart({ data, gender }: PrayerStackedBarChartPro
 
   const chartConfig = {
     prayed: {
-      label: <span><User className="h-5 w-5" style={{ color: gender === "female" ? "#10b981" : "#3b82f6" }} /></span>,
+      label: t("prayed", { defaultValue: "Уақытында" }),
       color: gender === "female" ? "#10b981" : "#3b82f6",
-      icon: () => null,
+      icon: User,
     },
-    congregation: {
-      label: <span><Users2 className="h-5 w-5" style={{ color: "#10b981" }} /></span>,
-      color: "#10b981",
-      icon: () => null,
-    },
+    ...(gender === "male" ? {
+      congregation: {
+        label: t("congregation", { defaultValue: "Жамағатпен" }),
+        color: "#10b981",
+        icon: Users2,
+      }
+    } : {}),
     delayed: {
-      label: <span><Clock className="h-5 w-5" style={{ color: "#f43f5e" }} /></span>,
+      label: t("delayed", { defaultValue: "Кешіктіріліп" }),
       color: "#f43f5e",
-      icon: () => null,
+      icon: Clock,
     },
     missed: {
-      label: <span><Ban className="h-5 w-5" style={{ color: "#18181b" }} /></span>,
+      label: t("missed", { defaultValue: "Қаза" }),
       color: "#18181b",
-      icon: () => null,
+      icon: Ban,
     },
     ...(gender === "female" ? {
       menstruation: {
-        label: <span><Flower2 className="h-5 w-5" style={{ color: "#ec4899" }} /></span>,
+        label: t("menstruation", { defaultValue: "Ерекше күндер" }),
         color: "#ec4899",
-        icon: () => null,
+        icon: Flower2,
       }
     } : {})
   } satisfies ChartConfig
@@ -129,9 +131,10 @@ export function PrayerStackedBarChart({ data, gender }: PrayerStackedBarChartPro
         <div className="flex flex-wrap items-center justify-center gap-4 mt-4">
           {Object.entries(chartConfig).map(([key, config]) => {
             if (key === 'value') return null;
+            const Icon = config.icon;
             return (
-              <div key={key} className="flex items-center justify-center">
-                {config.label}
+              <div key={key} className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                {Icon && <Icon className="h-5 w-5" style={{ color: config.color }} />}
               </div>
             );
           })}

@@ -44,10 +44,12 @@ export function PrayerAreaChart({ data, activeStatus, gender }: PrayerAreaChartP
       label: t("status_prayed"),
       color: gender === "female" ? "#10b981" : "#3b82f6",
     },
-    congregation: {
-      label: t("status_congregation"),
-      color: "#10b981",
-    },
+    ...(gender === "male" ? {
+      congregation: {
+        label: t("status_congregation"),
+        color: "#10b981",
+      }
+    } : {}),
     delayed: {
       label: t("status_delayed"),
       color: "#f43f5e",
@@ -146,9 +148,20 @@ export function PrayerAreaChart({ data, activeStatus, gender }: PrayerAreaChartP
               />
             )}
             
-            <ChartLegend content={<ChartLegendContent />} />
           </AreaChart>
         </ChartContainer>
+
+        <div className="flex flex-wrap items-center justify-center gap-4 mt-4">
+          {Object.entries(chartConfig).map(([key, config]) => {
+            if (key === 'value') return null;
+            const Icon = config.icon;
+            return (
+              <div key={key} className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                {Icon && <Icon className="h-5 w-5" style={{ color: config.color }} />}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   )
