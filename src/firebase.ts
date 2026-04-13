@@ -1,0 +1,13 @@
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { initializeFirestore, persistentLocalCache } from 'firebase/firestore';
+import firebaseConfig from '../firebase-applet-config.json';
+
+const app = initializeApp(firebaseConfig);
+
+// Enable offline persistence
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache()
+});
+
+export const auth = getAuth(app);

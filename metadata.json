@@ -1,0 +1,5 @@
+{
+  "name": "NAMAZYM",
+  "description": "Намаз уақыттарын қадағалауға және орындалу мәртебесін белгілеуге арналған қосымша.",
+  "requestFramePermissions": ["geolocation"]
+}

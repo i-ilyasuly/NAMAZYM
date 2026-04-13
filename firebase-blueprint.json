@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "PrayerRecord": {
+      "title": "PrayerRecord",
+      "description": "A record of a user's prayers for a specific day.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user ID of the owner."
+        },
+        "date": {
+          "type": "string",
+          "description": "The date of the record in YYYY-MM-DD format."
+        },
+        "fajr": {
+          "type": "string",
+          "enum": ["none", "prayed", "delayed", "missed"],
+          "description": "Status of Fajr prayer."
+        },
+        "dhuhr": {
+          "type": "string",
+          "enum": ["none", "prayed", "delayed", "missed"],
+          "description": "Status of Dhuhr prayer."
+        },
+        "asr": {
+          "type": "string",
+          "enum": ["none", "prayed", "delayed", "missed"],
+          "description": "Status of Asr prayer."
+        },
+        "maghrib": {
+          "type": "string",
+          "enum": ["none", "prayed", "delayed", "missed"],
+          "description": "Status of Maghrib prayer."
+        },
+        "isha": {
+          "type": "string",
+          "enum": ["none", "prayed", "delayed", "missed"],
+          "description": "Status of Isha prayer."
+        },
+        "updatedAt": {
+          "type": "timestamp",
+          "description": "When the record was last updated."
+        }
+      },
+      "required": ["uid", "date", "fajr", "dhuhr", "asr", "maghrib", "isha", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/prayer_records/{dateString}": {
+      "schema": {
+        "$ref": "#/entities/PrayerRecord"
+      },
+      "description": "Prayer records for a specific user, keyed by date."
+    }
+  }
+}
