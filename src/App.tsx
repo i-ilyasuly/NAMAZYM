@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot, setDoc, serverTimestamp, getDoc, collection, query, where, getDocs, limit, orderBy, writeBatch } from "firebase/firestore";
 import { format, subDays, startOfDay, startOfWeek, endOfWeek, eachDayOfInterval, addDays, isSameDay, startOfMonth, endOfMonth, addMonths, subMonths, isSameMonth } from "date-fns";
@@ -52,6 +52,7 @@ import {
 import {
   Moon,
   Sun,
+  Plus,
   MapPin,
   LogOut,
   User,
@@ -136,6 +137,8 @@ export default function App() {
   >("home");
   const [selectedPrayer, setSelectedPrayer] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
+  const [expandedPrayerId, setExpandedPrayerId] = useState<string | null>(null);
+  const [expansionStep, setExpansionStep] = useState<"status" | "context">("status");
   const [isStatusDrawerOpen, setIsStatusDrawerOpen] = useState(false);
   const [drawerStep, setDrawerStep] = useState<"status" | "context">("status");
   const [tempStatus, setTempStatus] = useState<PrayerStatus | null>(null);
@@ -147,14 +150,13 @@ export default function App() {
   const [allStatsRecords, setAllStatsRecords] = useState<PrayerRecord[] | null>(null);
   const [statsPeriod, setStatsPeriod] = useState<number>(7);
   const [activeChartType, setActiveChartType] = useState<string>("donut");
-  const [activePrayer, setActivePrayer] = useState<string>("all");
   const [statsStatus, setStatsStatus] = useState<string>("all");
   const [isGeneratingMock, setIsGeneratingMock] = useState(false);
   const [isCheckingGender, setIsCheckingGender] = useState(true);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [isShareScreenOpen, setIsShareScreenOpen] = useState(false);
-  const statsNeedsRefresh = useRef(true);
+  const statsNeedsRefresh = useRef(false);
   const lastFetchedPeriod = useRef<number | null>(null);
 
   const [calendarWeekStart, setCalendarWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
@@ -163,6 +165,96 @@ export default function App() {
   const [currentMonth, setCurrentMonth] = useState(startOfMonth(new Date()));
   const [weeklyRecords, setWeeklyRecords] = useState<Record<string, PrayerRecord>>({});
   const [currentStreak, setCurrentStreak] = useState<number>(0);
+
+  const prayers = [
+    { id: "fajr", name: t("fajr"), time: prayerTimes?.fajr },
+    { id: "dhuhr", name: t("dhuhr"), time: prayerTimes?.dhuhr },
+    { id: "asr", name: t("asr"), time: prayerTimes?.asr },
+    { id: "maghrib", name: t("maghrib"), time: prayerTimes?.maghrib },
+    { id: "isha", name: t("isha"), time: prayerTimes?.isha },
+  ];
+
+  const weeklyProgress = useMemo(() => {
+    const start = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const end = endOfWeek(new Date(), { weekStartsOn: 1 });
+    const daysInWeek = eachDayOfInterval({ start, end });
+    
+    let totalPrayers = 0;
+    let completedPrayers = 0;
+    
+    daysInWeek.forEach(day => {
+      const dateStr = format(day, "yyyy-MM-dd");
+      const record = weeklyRecords[dateStr];
+      if (record) {
+        prayers.forEach(p => {
+          totalPrayers++;
+          const status = record[p.id as keyof PrayerRecord];
+          if (status === "prayed" || status === "congregation" || status === "delayed") {
+            completedPrayers++;
+          }
+        });
+      }
+    });
+    
+    return totalPrayers > 0 ? Math.round((completedPrayers / totalPrayers) * 100) : 0;
+  }, [weeklyRecords, prayers]);
+
+  const quotes = [
+    "Намаз — мүміннің миғражы.",
+    "Намаз — діннің тірегі.",
+    "Намаз — жүректің нұры.",
+    "Намаз — жәннаттың кілті.",
+    "Намаз — Алламен тілдесу.",
+    "Намаз — екі дүние бақыты.",
+    "Намаз — пенде мен Раббысының арасындағы байланыс."
+  ];
+
+  const dailyQuote = useMemo(() => {
+    const dayOfYear = Math.floor((new Date().getTime() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+    return quotes[dayOfYear % quotes.length];
+  }, []);
+
+  const statusStreaks = useMemo(() => {
+    const prayerIds = ["fajr", "dhuhr", "asr", "maghrib", "isha"];
+    const streaks: Record<string, number> = {
+      congregation: 0,
+      prayed: 0,
+      delayed: 0,
+      missed: 0
+    };
+
+    const statuses: PrayerStatus[] = ["congregation", "prayed", "delayed", "missed"];
+    
+    // Calculate current streak for each status
+    // A streak is consecutive days where at least one prayer has this status? 
+    // Or consecutive prayers? Let's go with consecutive days for simplicity and consistency with the "Fire" streak.
+    // Actually, the user wants it to be like the fire streak.
+    
+    statuses.forEach(status => {
+      let count = 0;
+      let date = new Date();
+      
+      while (true) {
+        const dateStr = format(date, "yyyy-MM-dd");
+        const record = weeklyRecords[dateStr];
+        
+        if (!record) break;
+        
+        // Check if any prayer this day has this status
+        const hasStatus = prayerIds.some(pid => record[pid as keyof PrayerRecord] === status);
+        
+        if (hasStatus) {
+          count++;
+          date = subDays(date, 1);
+        } else {
+          break;
+        }
+      }
+      streaks[status] = count;
+    });
+
+    return streaks;
+  }, [weeklyRecords]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStartX(e.touches[0].clientX);
@@ -306,6 +398,14 @@ export default function App() {
     if (!user) return;
     
     if (allStatsRecords === null || forceRefresh) {
+      // If we already have records from the real-time listener, use them
+      const recordsArray = (Object.values(weeklyRecords) as PrayerRecord[]).sort((a, b) => b.date.localeCompare(a.date));
+      if (recordsArray.length > 0 && !forceRefresh) {
+        setAllStatsRecords(recordsArray);
+        processStats(recordsArray, statsPeriod);
+        return;
+      }
+
       setIsLoadingStats(true);
       const q = query(
         collection(db, "users", user.uid, "prayer_records"),
@@ -385,7 +485,7 @@ export default function App() {
           : "bg-blue-500 border-blue-700 dark:border-blue-400";
       case "congregation": return "bg-emerald-500 border-emerald-700 dark:border-emerald-400";
       case "delayed": return "bg-rose-500 border-rose-700 dark:border-rose-400";
-      case "missed": return "bg-zinc-500 border-zinc-700 dark:border-zinc-400";
+      case "missed": return "bg-zinc-900 border-zinc-950 dark:bg-zinc-100 dark:border-zinc-300";
       case "menstruation": return "bg-pink-500 border-pink-700 dark:border-pink-400";
       default: return "bg-zinc-100 dark:bg-zinc-800";
     }
@@ -396,9 +496,19 @@ export default function App() {
       case "prayed": return gender === "female" ? "bg-emerald-500" : "bg-blue-500";
       case "congregation": return "bg-emerald-500";
       case "delayed": return "bg-rose-500";
-      case "missed": return "bg-zinc-500";
+      case "missed": return "bg-zinc-900 dark:bg-zinc-100";
       case "menstruation": return "bg-pink-500";
       default: return "bg-transparent";
+    }
+  };
+
+  const getStatusStreakConfig = (status: string) => {
+    switch (status) {
+      case "congregation": return { icon: Users2, color: "text-emerald-500", bg: "bg-emerald-500/10", border: "border-emerald-500/20" };
+      case "prayed": return { icon: User, color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/20" };
+      case "delayed": return { icon: Clock, color: "text-rose-500", bg: "bg-rose-500/10", border: "border-rose-500/20" };
+      case "missed": return { icon: Ban, color: "text-zinc-900 dark:text-zinc-100", bg: "bg-zinc-500/10", border: "border-zinc-500/20" };
+      default: return { icon: Flame, color: "text-orange-500", bg: "bg-orange-500/10", border: "border-orange-500/20" };
     }
   };
 
@@ -625,6 +735,27 @@ export default function App() {
     return unsubscribe;
   }, [setUser, setAuthReady, setGender]);
 
+  // Real-time listener for ALL user records to keep stats in sync and fast
+  useEffect(() => {
+    if (!user || !isAuthReady) return;
+
+    const q = query(
+      collection(db, "users", user.uid, "prayer_records"),
+      orderBy("date", "desc"),
+      limit(365) // Cache last year of data for instant stats
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const records = snapshot.docs.map(doc => doc.data() as PrayerRecord);
+      setAllStatsRecords(records);
+      processStats(records, statsPeriod);
+    }, (error) => {
+      console.error("Error in stats real-time listener:", error);
+    });
+
+    return unsubscribe;
+  }, [user, isAuthReady, statsPeriod]);
+
   // Fetch Location & Prayer Times
   const fetchLocationAndTimes = (force = false) => {
     if (!user) return;
@@ -743,6 +874,8 @@ export default function App() {
       statsNeedsRefresh.current = true;
       setIsStatusDrawerOpen(false);
       setDrawerStep("status");
+      setExpandedPrayerId(null);
+      setExpansionStep("status");
     } catch (error) {
       console.error("Error updating status:", error);
     }
@@ -759,14 +892,6 @@ export default function App() {
   if (!user) {
     return <AuthScreen />;
   }
-
-  const prayers = [
-    { id: "fajr", name: t("fajr"), time: prayerTimes?.fajr },
-    { id: "dhuhr", name: t("dhuhr"), time: prayerTimes?.dhuhr },
-    { id: "asr", name: t("asr"), time: prayerTimes?.asr },
-    { id: "maghrib", name: t("maghrib"), time: prayerTimes?.maghrib },
-    { id: "isha", name: t("isha"), time: prayerTimes?.isha },
-  ];
 
   const contexts = [
     { id: "home", icon: Home, label: t("ctx_home"), color: "text-emerald-500" },
@@ -954,51 +1079,169 @@ export default function App() {
                     )}
                     {locationError ? <span className="text-rose-500">Error</span> : isLoadingLocation ? "..." : "AUTO"}
                   </button>
-                  {currentStreak > 0 && (
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-600 dark:text-orange-500 text-xs font-bold shadow-sm">
-                      <Flame className="w-3.5 h-3.5" />
-                      {currentStreak} {t("days", { defaultValue: "күн" })}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                    {currentStreak > 0 && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-600 dark:text-orange-500 text-[10px] font-bold shadow-sm">
+                        <Flame className="w-3 h-3" />
+                        {currentStreak}
+                      </div>
+                    )}
+                    {Object.entries(statusStreaks).map(([status, count]) => {
+                      const streakCount = count as number;
+                      if (streakCount < 2) return null; // Only show streaks of 2 or more
+                      const config = getStatusStreakConfig(status);
+                      const Icon = config.icon;
+                      return (
+                        <div key={status} className={cn(
+                          "flex items-center gap-1.5 px-2.5 py-1 rounded-full border shadow-sm text-[10px] font-bold",
+                          config.bg,
+                          config.border,
+                          config.color
+                        )}>
+                          <Icon className="w-3 h-3" />
+                          {streakCount}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col justify-center space-y-2 px-[5%] py-4">
+            <div className="flex-1 flex flex-col justify-center space-y-3 px-[5%] py-4">
               {!prayerTimes
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <Skeleton key={i} className="h-[52px] w-full rounded-2xl" />
                   ))
-                : prayers.map((prayer) => (
-                    <PrayerCard
-                      key={prayer.id}
-                      id={prayer.id}
-                      name={prayer.name}
-                      time={prayer.time || "--:--"}
-                      status={
-                        (currentRecord?.[
-                          prayer.id as keyof PrayerRecord
-                        ] as PrayerStatus) || "none"
-                      }
-                      gender={gender}
-                      onClick={() => {
-                        setSelectedPrayer(prayer.id);
-                        setTempStatus(
-                          (currentRecord?.[
-                            prayer.id as keyof PrayerRecord
-                          ] as PrayerStatus) || "none",
-                        );
-                        const existingContexts = currentRecord?.contexts?.[
-                          prayer.id as keyof typeof currentRecord.contexts
-                        ];
-                        setTempContext(
-                          Array.isArray(existingContexts) ? existingContexts : [],
-                        );
-                        setDrawerStep("status");
-                        setIsStatusDrawerOpen(true);
-                      }}
-                    />
-                  ))}
+                : prayers.map((prayer) => {
+                    const isExpanded = expandedPrayerId === prayer.id;
+                    const status = (currentRecord?.[prayer.id as keyof PrayerRecord] as PrayerStatus) || "none";
+                    
+                    return (
+                      <div key={prayer.id} className="flex flex-col space-y-2">
+                        <PrayerCard
+                          id={prayer.id}
+                          name={prayer.name}
+                          time={prayer.time || "--:--"}
+                          status={status}
+                          gender={gender}
+                          onClick={() => {
+                            if (isExpanded) {
+                              setExpandedPrayerId(null);
+                              setExpansionStep("status");
+                            } else {
+                              setSelectedPrayer(prayer.id);
+                              setTempStatus(status);
+                              const existingContexts = currentRecord?.contexts?.[
+                                prayer.id as keyof typeof currentRecord.contexts
+                              ];
+                              setTempContext(Array.isArray(existingContexts) ? existingContexts : []);
+                              setExpandedPrayerId(prayer.id);
+                              setExpansionStep("status");
+                            }
+                          }}
+                        />
+                        
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ type: "spring", duration: 0.4, bounce: 0.2 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-2 shadow-sm h-[64px] flex items-center overflow-hidden">
+                                {expansionStep === "status" ? (
+                                  <div className="flex items-center justify-around w-full px-2">
+                                    {[
+                                      { id: "prayed", icon: User, color: gender === "female" ? "text-emerald-500" : "text-blue-500" },
+                                      ...(gender === "male" ? [{ id: "congregation", icon: Users2, color: "text-emerald-500" }] : []),
+                                      { id: "delayed", icon: Clock, color: "text-amber-500" },
+                                      { id: "missed", icon: Ban, color: "text-zinc-900 dark:text-zinc-100" },
+                                      ...(gender === "female" ? [{ id: "menstruation", icon: Flower2, color: "text-pink-500" }] : []),
+                                      { id: "none", icon: Plus, color: "text-muted-foreground/40" },
+                                    ].map((s) => (
+                                      <button
+                                        key={s.id}
+                                        onClick={() => {
+                                          setTempStatus(s.id as PrayerStatus);
+                                          if (s.id === "none" || s.id === "menstruation") {
+                                            handleStatusUpdate();
+                                          } else {
+                                            setExpansionStep("context");
+                                          }
+                                        }}
+                                        className="relative w-10 h-10 flex items-center justify-center transition-all active:scale-90"
+                                      >
+                                        <s.icon className={cn("w-5 h-5", s.color)} />
+                                        {tempStatus === s.id && (
+                                          <div className={cn(
+                                            "absolute inset-0 rounded-full blur-md opacity-40 -z-10",
+                                            s.id === "prayed" ? (gender === "female" ? "bg-emerald-500" : "bg-blue-500") :
+                                            s.id === "congregation" ? "bg-emerald-500" :
+                                            s.id === "delayed" ? "bg-amber-500" :
+                                            s.id === "missed" ? "bg-zinc-900 dark:bg-zinc-100" :
+                                            s.id === "menstruation" ? "bg-pink-500" : "bg-zinc-400"
+                                          )} />
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center w-full gap-2 px-2 overflow-x-auto no-scrollbar">
+                                    <button 
+                                      onClick={() => setExpansionStep("status")}
+                                      className="p-2 shrink-0 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                                    >
+                                      <Plus className="w-4 h-4 rotate-45" />
+                                    </button>
+                                    <div className="flex items-center gap-1 flex-1 overflow-x-auto no-scrollbar">
+                                      {contexts.map((ctx) => {
+                                        const isSelected = tempContext.includes(ctx.id);
+                                        return (
+                                          <button
+                                            key={ctx.id}
+                                            onClick={() => {
+                                              if (isSelected) {
+                                                setTempContext(tempContext.filter(c => c !== ctx.id));
+                                              } else {
+                                                setTempContext([...tempContext, ctx.id]);
+                                              }
+                                            }}
+                                            className="relative w-9 h-9 shrink-0 flex items-center justify-center transition-all active:scale-90"
+                                          >
+                                            <ctx.icon className={cn("w-4 h-4", ctx.color)} />
+                                            {isSelected && (
+                                              <div className={cn(
+                                                "absolute inset-0 rounded-full blur-md opacity-40 -z-10",
+                                                ctx.color.includes("emerald") ? "bg-emerald-500" :
+                                                ctx.color.includes("blue") ? "bg-blue-500" :
+                                                ctx.color.includes("amber") ? "bg-amber-500" :
+                                                ctx.color.includes("pink") ? "bg-pink-500" :
+                                                ctx.color.includes("indigo") ? "bg-indigo-500" : "bg-zinc-400"
+                                              )} />
+                                            )}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                    <Button 
+                                      variant="outline"
+                                      className="h-7 px-4 rounded-full font-bold text-[9px] uppercase tracking-wider border-zinc-200 dark:border-zinc-800 hover:bg-zinc-900 hover:text-white dark:hover:bg-zinc-100 dark:hover:text-zinc-900 shrink-0"
+                                      onClick={handleStatusUpdate}
+                                    >
+                                      {t("save")}
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  })}
             </div>
           </div>
         )}
@@ -1121,14 +1364,86 @@ export default function App() {
                                   const dotColor = getStatusDotColorForCell(status);
                                   const hasStatus = status && status !== "none";
                                   
+                                  // 1. Define Status Hierarchy Rank
+                                  const getStatusRank = (s: PrayerStatus | undefined): number => {
+                                    switch (s) {
+                                      case "congregation": return 4;
+                                      case "prayed": return 3;
+                                      case "delayed": return 2;
+                                      case "missed": return 1;
+                                      default: return 0;
+                                    }
+                                  };
+
+                                  const currentRank = getStatusRank(status);
+                                  
+                                  // 2. Check for "Drop" in the entire week for this specific prayer
+                                  // If there's any day where quality decreased, all lines for this prayer in this week disappear.
+                                  const hasWeeklyDrop = (() => {
+                                    const weekStart = startOfWeek(calendarWeekStart, { weekStartsOn: 1 });
+                                    let lastRank = -1;
+                                    
+                                    for (let d = 0; d < 7; d++) {
+                                      const dStr = format(addDays(weekStart, d), "yyyy-MM-dd");
+                                      const r = weeklyRecords[dStr];
+                                      const s = r ? (r[prayerId as keyof PrayerRecord] as PrayerStatus) : "none";
+                                      const rnk = getStatusRank(s);
+                                      
+                                      if (rnk > 0) {
+                                        if (lastRank !== -1 && rnk < lastRank) return true; // Drop detected!
+                                        lastRank = rnk;
+                                      }
+                                    }
+                                    return false;
+                                  })();
+
+                                  const hasNextLine = (() => {
+                                    if (hasWeeklyDrop || currentRank === 0 || i >= 6) return false;
+                                    
+                                    const nextDay = addDays(day, 1);
+                                    const nextDateStr = format(nextDay, "yyyy-MM-dd");
+                                    const nextRecord = weeklyRecords[nextDateStr] || {};
+                                    const nextStatus = nextRecord[prayerId as keyof PrayerRecord] as PrayerStatus;
+                                    const nextRank = getStatusRank(nextStatus);
+                                    
+                                    // Line exists if next day is better or equal
+                                    return nextRank >= currentRank;
+                                  })();
+
+                                  const hasPrevLine = (() => {
+                                    if (hasWeeklyDrop || currentRank === 0 || i <= 0) return false;
+                                    
+                                    const prevDay = subDays(day, 1);
+                                    const prevDateStr = format(prevDay, "yyyy-MM-dd");
+                                    const prevRecord = weeklyRecords[prevDateStr] || {};
+                                    const prevStatus = prevRecord[prayerId as keyof PrayerRecord] as PrayerStatus;
+                                    const prevRank = getStatusRank(prevStatus);
+                                    
+                                    return currentRank >= prevRank && prevRank > 0;
+                                  })();
+                                  
                                   return (
-                                    <div 
-                                      key={idx} 
-                                      className={cn(
-                                        "w-3.5 h-3.5 rounded-full", 
-                                        hasStatus ? dotColor : "bg-muted-foreground/20"
-                                      )} 
-                                    />
+                                    <div key={idx} className="relative w-3.5 h-3.5 flex items-center justify-center">
+                                      {hasNextLine && (
+                                        <motion.div 
+                                          initial={{ scaleX: 0 }}
+                                          animate={{ scaleX: 1 }}
+                                          transition={{ duration: 0.5, delay: idx * 0.1 }}
+                                          style={{ originX: 0 }}
+                                          className={cn(
+                                            "absolute left-1/2 top-1/2 -translate-y-1/2 w-[48px] h-[2px] z-0 opacity-60",
+                                            dotColor
+                                          )} 
+                                        />
+                                      )}
+                                      <div 
+                                        className={cn(
+                                          "relative z-10 w-3.5 h-3.5 rounded-full transition-all duration-300", 
+                                          hasStatus ? dotColor : "bg-muted-foreground/10",
+                                          (hasPrevLine || hasNextLine) && "scale-110 shadow-[0_0_8px_rgba(0,0,0,0.2)]"
+                                        )} 
+                                      />
+                                    </div>
                                   );
                                 })}
                               </button>
@@ -1310,24 +1625,6 @@ export default function App() {
             </div>
             )}
 
-            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-4 border-t border-muted/30">
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-blue-500" />
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("status_prayed")}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("status_congregation")}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-rose-500" />
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("status_delayed")}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-zinc-900 dark:bg-zinc-950 border border-zinc-800" />
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("status_missed")}</span>
-              </div>
-            </div>
           </div>
         )}
 
@@ -1490,45 +1787,6 @@ export default function App() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-                {/* 4. Prayer Filter */}
-                <AnimatePresence>
-                  {["donut", "pie", "line", "area"].includes(activeChartType) && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="w-full overflow-hidden"
-                    >
-                      <Tabs 
-                        value={activePrayer} 
-                        onValueChange={setActivePrayer}
-                        className="w-full"
-                      >
-                        <TabsList className="grid w-full grid-cols-6 h-14 p-1 bg-muted/50 rounded-xl">
-                          <TabsTrigger value="all" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                            <LayoutGrid className="w-5 h-5 text-slate-500" />
-                          </TabsTrigger>
-                          <TabsTrigger value="fajr" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                            <Sunrise className="w-5 h-5 text-amber-500" />
-                          </TabsTrigger>
-                          <TabsTrigger value="dhuhr" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                            <Sun className="w-5 h-5 text-orange-500" />
-                          </TabsTrigger>
-                          <TabsTrigger value="asr" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                            <CloudSun className="w-5 h-5 text-amber-600" />
-                          </TabsTrigger>
-                          <TabsTrigger value="maghrib" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                            <Sunset className="w-5 h-5 text-indigo-400" />
-                          </TabsTrigger>
-                          <TabsTrigger value="isha" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                            <Moon className="w-5 h-5 text-slate-500" />
-                          </TabsTrigger>
-                        </TabsList>
-                      </Tabs>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
               </div>
             </div>
 
@@ -1548,9 +1806,7 @@ export default function App() {
               <div className="space-y-6">
                 <div className="p-2">
                   {(() => {
-                    const filteredStatsData = activePrayer === "all" 
-                      ? statsData 
-                      : statsData.filter(d => d.prayer === t(activePrayer));
+                    const filteredStatsData = statsData;
                     
                     return (
                       <>
@@ -1892,23 +2148,20 @@ export default function App() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Status Drawer */}
       <Drawer open={isStatusDrawerOpen} onOpenChange={setIsStatusDrawerOpen}>
-        <DrawerContent>
-          <DrawerHeader className="text-left">
-            <DrawerTitle className="text-xl font-semibold">
-              {drawerStep === "status" ? t("mark_status") : t("context_title")}
-            </DrawerTitle>
-            <p className="text-sm text-muted-foreground">
-              {drawerStep === "status"
-                ? "Select the status for this prayer."
-                : t("context_desc")}
-            </p>
-          </DrawerHeader>
-          <div className="px-4 pb-8 pt-2">
+        <DrawerContent className="max-h-[85vh]">
+          <div className="mx-auto w-full max-w-md p-6 overflow-y-auto custom-scrollbar">
+            <DrawerHeader className="px-0 pt-0">
+              <DrawerTitle className="text-2xl font-black tracking-tight text-center uppercase">
+                {drawerStep === "status"
+                  ? prayers.find((p) => p.id === selectedPrayer)?.name
+                  : t("context")}
+              </DrawerTitle>
+            </DrawerHeader>
+
             {drawerStep === "status" ? (
               <>
-                <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden flex flex-col">
+                <div className="flex flex-col bg-card rounded-2xl border border-muted/40 overflow-hidden shadow-sm">
                   <button
                     className={cn(
                       "flex items-center justify-between p-4 border-b last:border-0 transition-colors",
@@ -2171,47 +2424,6 @@ export default function App() {
           </div>
         </DrawerContent>
       </Drawer>
-
-      {/* Gender Selection Dialog */}
-      <AlertDialog
-        open={isAuthReady && !!user && !gender}
-        onOpenChange={() => {}}
-      >
-        <AlertDialogContent className="max-w-[90%] sm:max-w-[400px]">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("gender_select_title")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("gender_select_desc")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="flex flex-col gap-3 mt-4">
-            <Button
-              variant="outline"
-              className="h-14 text-lg"
-              onClick={async () => {
-                setGender("male");
-                if (user) {
-                  await setDoc(doc(db, "users", user.uid), { gender: "male" }, { merge: true });
-                }
-              }}
-            >
-              {t("male")}
-            </Button>
-            <Button
-              variant="outline"
-              className="h-14 text-lg"
-              onClick={async () => {
-                setGender("female");
-                if (user) {
-                  await setDoc(doc(db, "users", user.uid), { gender: "female" }, { merge: true });
-                }
-              }}
-            >
-              {t("female")}
-            </Button>
-          </div>
-        </AlertDialogContent>
-      </AlertDialog>
       <ShareScreen 
         isOpen={isShareScreenOpen} 
         onClose={() => setIsShareScreenOpen(false)} 

@@ -111,10 +111,10 @@ export function PrayerPieChart({ data, gender }: PrayerPieChartProps) {
         <div className="flex flex-wrap items-center justify-center gap-4 mt-4">
           {Object.entries(chartConfig).map(([key, config]) => {
             if (key === 'value') return null;
-            const Icon = config.icon;
+            const Icon = (config as any).icon;
             return (
               <div key={key} className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                {Icon && <Icon className="h-5 w-5" style={{ color: config.color }} />}
+                {Icon && <Icon className="h-5 w-5" style={{ color: (config as any).color }} />}
               </div>
             );
           })}

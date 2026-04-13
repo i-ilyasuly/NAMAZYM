@@ -1,9 +1,10 @@
 "use client"
 
-import { Area, AreaChart, CartesianGrid, XAxis } from "recharts"
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { useTranslation } from "react-i18next"
 import { format, subDays } from "date-fns"
 import { kk } from "date-fns/locale"
+import { Sunrise, Sun, CloudSun, Sunset, Moon } from "lucide-react"
 
 import {
   ChartContainer,
@@ -82,10 +83,29 @@ export function PrayerAreaChart({ data, activeStatus, gender }: PrayerAreaChartP
           >
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
-              dataKey="translatedPrayer"
+              dataKey="prayer"
               tickLine={false}
               axisLine={false}
-              tickMargin={8}
+              tickMargin={12}
+              tick={({ x, y, payload }) => {
+                const getIcon = () => {
+                  const prayerKey = payload.value.toLowerCase();
+                  if (prayerKey.includes("таң") || prayerKey.includes("fajr")) return <Sunrise className="w-5 h-5 text-amber-500" />;
+                  if (prayerKey.includes("бесін") || prayerKey.includes("dhuhr")) return <Sun className="w-5 h-5 text-orange-500" />;
+                  if (prayerKey.includes("екінті") || prayerKey.includes("asr")) return <CloudSun className="w-5 h-5 text-amber-600" />;
+                  if (prayerKey.includes("ақшам") || prayerKey.includes("maghrib")) return <Sunset className="w-5 h-5 text-indigo-400" />;
+                  if (prayerKey.includes("құптан") || prayerKey.includes("isha")) return <Moon className="w-5 h-5 text-slate-500" />;
+                  return null;
+                };
+
+                return (
+                  <foreignObject x={x - 10} y={y + 8} width={20} height={20}>
+                    <div className="flex items-center justify-center w-full h-full">
+                      {getIcon()}
+                    </div>
+                  </foreignObject>
+                );
+              }}
             />
             <ChartTooltip
               cursor={false}
@@ -100,7 +120,6 @@ export function PrayerAreaChart({ data, activeStatus, gender }: PrayerAreaChartP
                 fill="var(--color-prayed)"
                 fillOpacity={0.4}
                 stroke="var(--color-prayed)"
-                stackId="a"
               />
             )}
             
@@ -111,7 +130,6 @@ export function PrayerAreaChart({ data, activeStatus, gender }: PrayerAreaChartP
                 fill="var(--color-congregation)"
                 fillOpacity={0.4}
                 stroke="var(--color-congregation)"
-                stackId="a"
               />
             )}
             
@@ -122,7 +140,6 @@ export function PrayerAreaChart({ data, activeStatus, gender }: PrayerAreaChartP
                 fill="var(--color-delayed)"
                 fillOpacity={0.4}
                 stroke="var(--color-delayed)"
-                stackId="a"
               />
             )}
             
@@ -133,7 +150,6 @@ export function PrayerAreaChart({ data, activeStatus, gender }: PrayerAreaChartP
                 fill="var(--color-menstruation)"
                 fillOpacity={0.4}
                 stroke="var(--color-menstruation)"
-                stackId="a"
               />
             )}
             
@@ -144,7 +160,6 @@ export function PrayerAreaChart({ data, activeStatus, gender }: PrayerAreaChartP
                 fill="var(--color-missed)"
                 fillOpacity={0.4}
                 stroke="var(--color-missed)"
-                stackId="a"
               />
             )}
             
@@ -154,10 +169,10 @@ export function PrayerAreaChart({ data, activeStatus, gender }: PrayerAreaChartP
         <div className="flex flex-wrap items-center justify-center gap-4 mt-4">
           {Object.entries(chartConfig).map(([key, config]) => {
             if (key === 'value') return null;
-            const Icon = config.icon;
+            const Icon = (config as any).icon;
             return (
               <div key={key} className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                {Icon && <Icon className="h-5 w-5" style={{ color: config.color }} />}
+                {Icon && <Icon className="h-5 w-5" style={{ color: (config as any).color }} />}
               </div>
             );
           })}

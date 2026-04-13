@@ -54,38 +54,38 @@ export function PrayerCard({
       case "prayed":
         return {
           icon: User,
-          color: gender === "female" ? "text-emerald-600 dark:text-emerald-400" : "text-blue-600 dark:text-blue-400",
+          color: gender === "female" ? "text-emerald-500" : "text-blue-500",
           bg: gender === "female" 
-            ? "bg-emerald-500/10 border-emerald-200/30"
-            : "bg-blue-500/10 border-blue-200/30",
+            ? "bg-emerald-500/5 border-emerald-500/20 dark:bg-emerald-500/10 dark:border-emerald-500/30"
+            : "bg-blue-500/5 border-blue-500/20 dark:bg-blue-500/10 dark:border-blue-500/30",
           label: t("status_prayed"),
         };
       case "congregation":
         return {
           icon: Users2,
-          color: "text-emerald-600 dark:text-emerald-400",
-          bg: "bg-emerald-500/10 border-emerald-200/30",
+          color: "text-emerald-500",
+          bg: "bg-emerald-500/5 border-emerald-500/20 dark:bg-emerald-500/10 dark:border-emerald-500/30",
           label: t("status_congregation"),
         };
       case "delayed":
         return {
           icon: Clock,
-          color: "text-amber-600 dark:text-amber-400",
-          bg: "bg-amber-500/10 border-amber-200/30",
+          color: "text-amber-500",
+          bg: "bg-amber-500/5 border-amber-500/20 dark:bg-amber-500/10 dark:border-amber-500/30",
           label: t("status_delayed"),
         };
       case "missed":
         return {
           icon: Ban,
-          color: "text-rose-600 dark:text-rose-400",
-          bg: "bg-rose-500/10 border-rose-200/30",
+          color: "text-zinc-900 dark:text-zinc-100",
+          bg: "bg-zinc-900/5 border-zinc-900/20 dark:bg-zinc-100/5 dark:border-zinc-100/20",
           label: t("status_missed"),
         };
       case "menstruation":
         return {
           icon: Flower2,
-          color: "text-pink-600 dark:text-pink-400",
-          bg: "bg-pink-500/10 border-pink-200/30",
+          color: "text-pink-500",
+          bg: "bg-pink-500/5 border-pink-500/20 dark:bg-pink-500/10 dark:border-pink-500/30",
           label: t("status_menstruation"),
         };
       default:
@@ -93,14 +93,14 @@ export function PrayerCard({
           return {
             icon: AlertCircle,
             color: "text-amber-500",
-            bg: "bg-amber-500/10 border-amber-500/20 animate-pulse",
+            bg: "bg-amber-500/5 border-amber-500/20 animate-pulse",
             label: t("forgot_to_mark"),
           };
         }
         return {
           icon: Plus,
           color: "text-muted-foreground/40",
-          bg: "bg-muted/10 border-transparent",
+          bg: "bg-muted/5 border-transparent",
           label: t("status_none"),
         };
     }
@@ -114,9 +114,9 @@ export function PrayerCard({
       case "fajr":
         return <Sunrise className="w-4 h-4 text-amber-500/80" />;
       case "dhuhr":
-        return <Sun className="w-4 h-4 text-orange-500/80" />;
+        return <Sun className="w-4 h-4 text-orange-500/80 stroke-[2.5px]" />;
       case "asr":
-        return <CloudSun className="w-4 h-4 text-amber-600/80" />;
+        return <Sun className="w-3.5 h-3.5 text-amber-600/80 stroke-[1.5px]" />;
       case "maghrib":
         return <Sunset className="w-4 h-4 text-indigo-400/80" />;
       case "isha":
@@ -129,41 +129,41 @@ export function PrayerCard({
   return (
     <Card
       className={cn(
-        "w-full cursor-pointer transition-all duration-200 border-muted/40 hover:border-muted-foreground/30 rounded-2xl overflow-hidden group",
-        status === "none" && !needsAttention ? "bg-card" : config.bg,
+        "w-full cursor-pointer transition-all duration-300 border border-zinc-100 dark:border-zinc-800/50 hover:border-zinc-200 dark:hover:border-zinc-700 rounded-2xl overflow-hidden group shadow-sm hover:shadow-md",
+        status === "none" && !needsAttention ? "bg-white dark:bg-zinc-900/40" : config.bg,
       )}
       onClick={onClick}
     >
-      <CardContent className="flex flex-row items-center justify-between py-2.5 px-4">
+      <CardContent className="flex flex-row items-center justify-between py-2 px-4">
         <div className="flex items-center gap-3">
           <div
             className={cn(
-              "w-8 h-8 rounded-full flex items-center justify-center transition-colors bg-background/80 shadow-sm border border-muted/20 shrink-0",
+              "w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 bg-zinc-50 dark:bg-zinc-800/50 shadow-inner border border-zinc-100 dark:border-zinc-700/30 shrink-0 group-hover:scale-105",
             )}
           >
             {getPrayerIcon(id)}
           </div>
-          <div className="flex flex-col gap-0">
-            <span className="text-base font-bold tracking-tight text-foreground leading-tight">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-100 leading-tight">
               {name}
             </span>
-            <span className="text-xs font-semibold text-muted-foreground leading-tight">
+            <span className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 leading-tight tracking-wide">
               {time}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {status !== "none" && (
-            <span className={cn("text-[10px] font-bold uppercase tracking-wider hidden sm:inline-block", config.color)}>
+            <span className={cn("text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline-block opacity-80", config.color)}>
               {config.label}
             </span>
           )}
           <div className={cn(
-            "w-8 h-8 rounded-full flex items-center justify-center bg-background/80 shadow-sm border border-muted/20 shrink-0 transition-colors", 
+            "w-9 h-9 rounded-full flex items-center justify-center bg-white dark:bg-zinc-800/80 shadow-sm border border-zinc-100 dark:border-zinc-700/50 shrink-0 transition-all duration-300 group-hover:shadow-md", 
             config.color
           )}>
-            <StatusIcon className="w-4 h-4" />
+            <StatusIcon className="w-4.5 h-4.5" />
           </div>
         </div>
       </CardContent>

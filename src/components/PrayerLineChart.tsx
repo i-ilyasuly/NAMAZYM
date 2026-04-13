@@ -1,7 +1,7 @@
 "use client"
 
 import { TrendingUp, Sunrise, Sun, CloudSun, Sunset, Moon, Clock, User, Users2, Ban, Flower2 } from "lucide-react"
-import { CartesianGrid, Line, LineChart, XAxis } from "recharts"
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 import { useTranslation } from "react-i18next"
 
 import {
