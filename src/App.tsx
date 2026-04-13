@@ -9,6 +9,7 @@ import { fetchPrayerTimes } from "./lib/aladhan";
 import { AuthScreen } from "./components/AuthScreen";
 import { BottomNav } from "./components/BottomNav";
 import { PrayerCard } from "./components/PrayerCard";
+import NightSky from "./components/NightSky";
 import { PrayerRadarChart } from "./components/PrayerRadarChart";
 import { PrayerRadarChart2 } from "./components/PrayerRadarChart2";
 import { PrayerBarChart } from "./components/PrayerBarChart";
@@ -1049,7 +1050,11 @@ export default function App() {
   ];
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-background font-sans text-foreground transition-colors duration-300 flex flex-col">
+    <div className={cn(
+      "h-[100dvh] overflow-hidden font-sans text-foreground transition-colors duration-300 flex flex-col",
+      activeTab === "home" && isDarkMode ? "bg-transparent" : "bg-background"
+    )}>
+      {activeTab === "home" && isDarkMode && <NightSky />}
       <main className="flex-1 flex flex-col max-w-md mx-auto w-full p-4 pt-6 overflow-y-auto custom-scrollbar">
         {activeTab === "home" && (
           <div className="flex flex-col flex-1">
@@ -1108,140 +1113,157 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col justify-center space-y-3 px-[5%] py-4">
-              {!prayerTimes
-                ? Array.from({ length: 5 }).map((_, i) => (
-                    <Skeleton key={i} className="h-[52px] w-full rounded-2xl" />
-                  ))
-                : prayers.map((prayer) => {
-                    const isExpanded = expandedPrayerId === prayer.id;
-                    const status = (currentRecord?.[prayer.id as keyof PrayerRecord] as PrayerStatus) || "none";
-                    
-                    return (
-                      <div key={prayer.id} className="flex flex-col space-y-2">
-                        <PrayerCard
-                          id={prayer.id}
-                          name={prayer.name}
-                          time={prayer.time || "--:--"}
-                          status={status}
-                          gender={gender}
-                          onClick={() => {
-                            if (isExpanded) {
-                              setExpandedPrayerId(null);
-                              setExpansionStep("status");
-                            } else {
-                              setSelectedPrayer(prayer.id);
-                              setTempStatus(status);
-                              const existingContexts = currentRecord?.contexts?.[
-                                prayer.id as keyof typeof currentRecord.contexts
-                              ];
-                              setTempContext(Array.isArray(existingContexts) ? existingContexts : []);
-                              setExpandedPrayerId(prayer.id);
-                              setExpansionStep("status");
-                            }
-                          }}
-                        />
-                        
-                        <AnimatePresence>
-                          {isExpanded && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: "auto", opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              transition={{ type: "spring", duration: 0.4, bounce: 0.2 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-2 shadow-sm h-[64px] flex items-center overflow-hidden">
-                                {expansionStep === "status" ? (
-                                  <div className="flex items-center justify-around w-full px-2">
-                                    {[
-                                      { id: "prayed", icon: User, color: gender === "female" ? "text-emerald-500" : "text-blue-500" },
-                                      ...(gender === "male" ? [{ id: "congregation", icon: Users2, color: "text-emerald-500" }] : []),
-                                      { id: "delayed", icon: Clock, color: "text-amber-500" },
-                                      { id: "missed", icon: Ban, color: "text-zinc-900 dark:text-zinc-100" },
-                                      ...(gender === "female" ? [{ id: "menstruation", icon: Flower2, color: "text-pink-500" }] : []),
-                                      { id: "none", icon: Plus, color: "text-muted-foreground/40" },
-                                    ].map((s) => (
-                                      <button
-                                        key={s.id}
-                                        onClick={() => {
-                                          setTempStatus(s.id as PrayerStatus);
-                                          if (s.id === "none" || s.id === "menstruation") {
-                                            handleStatusUpdate();
-                                          } else {
-                                            setExpansionStep("context");
-                                          }
-                                        }}
-                                        className="relative w-10 h-10 flex items-center justify-center transition-all active:scale-90"
-                                      >
-                                        <s.icon className={cn("w-5 h-5", s.color)} />
-                                        {tempStatus === s.id && (
-                                          <div className={cn(
-                                            "absolute inset-0 rounded-full blur-md opacity-40 -z-10",
-                                            s.id === "prayed" ? (gender === "female" ? "bg-emerald-500" : "bg-blue-500") :
-                                            s.id === "congregation" ? "bg-emerald-500" :
-                                            s.id === "delayed" ? "bg-amber-500" :
-                                            s.id === "missed" ? "bg-zinc-900 dark:bg-zinc-100" :
-                                            s.id === "menstruation" ? "bg-pink-500" : "bg-zinc-400"
-                                          )} />
-                                        )}
-                                      </button>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center w-full gap-2 px-2 overflow-x-auto no-scrollbar">
-                                    <button 
-                                      onClick={() => setExpansionStep("status")}
-                                      className="p-2 shrink-0 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
-                                    >
-                                      <Plus className="w-4 h-4 rotate-45" />
-                                    </button>
-                                    <div className="flex items-center gap-1 flex-1 overflow-x-auto no-scrollbar">
-                                      {contexts.map((ctx) => {
-                                        const isSelected = tempContext.includes(ctx.id);
-                                        return (
+            <div className="flex-1 flex flex-col justify-center px-[15%] pt-4 pb-32">
+              <div className="bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl overflow-hidden shadow-sm">
+                {!prayerTimes
+                  ? Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-[64px] w-full border-b border-zinc-100 dark:border-zinc-800/50 last:border-0" />
+                    ))
+                  : prayers.map((prayer, index) => {
+                      const isExpanded = expandedPrayerId === prayer.id;
+                      const status = (currentRecord?.[prayer.id as keyof PrayerRecord] as PrayerStatus) || "none";
+                      
+                      return (
+                        <div key={prayer.id} className={cn(
+                          "flex flex-col border-b border-zinc-100 dark:border-zinc-800/50 last:border-0 transition-colors duration-300",
+                          isExpanded && "bg-zinc-50/50 dark:bg-zinc-800/20"
+                        )}>
+                          <PrayerCard
+                            id={prayer.id}
+                            name={prayer.name}
+                            time={prayer.time || "--:--"}
+                            status={status}
+                            gender={gender}
+                            noCard={true}
+                            onClick={() => {
+                              if (isExpanded) {
+                                setExpandedPrayerId(null);
+                                setExpansionStep("status");
+                              } else {
+                                setSelectedPrayer(prayer.id);
+                                setTempStatus(status);
+                                const existingContexts = currentRecord?.contexts?.[
+                                  prayer.id as keyof typeof currentRecord.contexts
+                                ];
+                                setTempContext(Array.isArray(existingContexts) ? existingContexts : []);
+                                setExpandedPrayerId(prayer.id);
+                                setExpansionStep("status");
+                              }
+                            }}
+                          />
+                          
+                          <AnimatePresence>
+                            {isExpanded && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: "auto", opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ type: "spring", duration: 0.4, bounce: 0.2 }}
+                                className="overflow-hidden"
+                              >
+                                <div className="px-4 pb-2">
+                                  <div className="h-[48px] flex items-center overflow-hidden">
+                                    {expansionStep === "status" ? (
+                                      <div className="flex items-center justify-around w-full px-2">
+                                        {[
+                                          { id: "prayed", icon: User, color: gender === "female" ? "text-emerald-500" : "text-blue-500" },
+                                          ...(gender === "male" ? [{ id: "congregation", icon: Users2, color: "text-emerald-500" }] : []),
+                                          { id: "delayed", icon: Clock, color: "text-amber-500" },
+                                          { id: "missed", icon: Ban, color: "text-zinc-900 dark:text-zinc-100" },
+                                          ...(gender === "female" ? [{ id: "menstruation", icon: Flower2, color: "text-pink-500" }] : []),
+                                          { id: "none", icon: Plus, color: "text-muted-foreground/40" },
+                                        ].map((s) => (
                                           <button
-                                            key={ctx.id}
+                                            key={s.id}
                                             onClick={() => {
-                                              if (isSelected) {
-                                                setTempContext(tempContext.filter(c => c !== ctx.id));
+                                              setTempStatus(s.id as PrayerStatus);
+                                              if (s.id === "none" || s.id === "menstruation") {
+                                                handleStatusUpdate();
                                               } else {
-                                                setTempContext([...tempContext, ctx.id]);
+                                                setExpansionStep("context");
                                               }
                                             }}
-                                            className="relative w-9 h-9 shrink-0 flex items-center justify-center transition-all active:scale-90"
+                                            className="relative w-10 h-10 flex items-center justify-center transition-all active:scale-90"
                                           >
-                                            <ctx.icon className={cn("w-4 h-4", ctx.color)} />
-                                            {isSelected && (
-                                              <div className={cn(
-                                                "absolute inset-0 rounded-full blur-md opacity-40 -z-10",
-                                                ctx.color.includes("emerald") ? "bg-emerald-500" :
-                                                ctx.color.includes("blue") ? "bg-blue-500" :
-                                                ctx.color.includes("amber") ? "bg-amber-500" :
-                                                ctx.color.includes("pink") ? "bg-pink-500" :
-                                                ctx.color.includes("indigo") ? "bg-indigo-500" : "bg-zinc-400"
-                                              )} />
+                                            <s.icon className={cn("w-5 h-5 relative z-10", s.color)} />
+                                            {tempStatus === s.id && (
+                                              <motion.div 
+                                                layoutId="statusGlow"
+                                                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                                                className={cn(
+                                                  "absolute inset-0 rounded-full blur-xl opacity-10 -z-0 scale-75",
+                                                  s.id === "prayed" ? (gender === "female" ? "bg-emerald-500" : "bg-blue-500") :
+                                                  s.id === "congregation" ? "bg-emerald-500" :
+                                                  s.id === "delayed" ? "bg-amber-500" :
+                                                  s.id === "missed" ? "bg-zinc-900 dark:bg-zinc-100" :
+                                                  s.id === "menstruation" ? "bg-pink-500" : "bg-zinc-400"
+                                                )} 
+                                              />
                                             )}
                                           </button>
-                                        );
-                                      })}
-                                    </div>
-                                    <Button 
-                                      variant="outline"
-                                      className="h-7 px-4 rounded-full font-bold text-[9px] uppercase tracking-wider border-zinc-200 dark:border-zinc-800 hover:bg-zinc-900 hover:text-white dark:hover:bg-zinc-100 dark:hover:text-zinc-900 shrink-0"
-                                      onClick={handleStatusUpdate}
-                                    >
-                                      {t("save")}
-                                    </Button>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center w-full gap-2 px-2 overflow-x-auto no-scrollbar">
+                                        <button 
+                                          onClick={() => setExpansionStep("status")}
+                                          className="p-2 shrink-0 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                                        >
+                                          <Plus className="w-4 h-4 rotate-45" />
+                                        </button>
+                                        <div className="flex items-center gap-1 flex-1 overflow-x-auto no-scrollbar">
+                                          {contexts.map((ctx) => {
+                                            const isSelected = tempContext.includes(ctx.id);
+                                            return (
+                                              <button
+                                                key={ctx.id}
+                                                onClick={() => {
+                                                  if (isSelected) {
+                                                    setTempContext(tempContext.filter(c => c !== ctx.id));
+                                                  } else {
+                                                    setTempContext([...tempContext, ctx.id]);
+                                                  }
+                                                }}
+                                                className="relative w-9 h-9 shrink-0 flex items-center justify-center transition-all active:scale-90"
+                                              >
+                                                <ctx.icon className={cn("w-4 h-4 relative z-10", ctx.color)} />
+                                                {isSelected && (
+                                                  <motion.div 
+                                                    initial={{ opacity: 0, scale: 0.5 }}
+                                                    animate={{ opacity: 0.1, scale: 0.75 }}
+                                                    exit={{ opacity: 0, scale: 0.5 }}
+                                                    className={cn(
+                                                      "absolute inset-0 rounded-full blur-lg -z-0",
+                                                      ctx.color.includes("emerald") ? "bg-emerald-500" :
+                                                      ctx.color.includes("blue") ? "bg-blue-500" :
+                                                      ctx.color.includes("amber") ? "bg-amber-500" :
+                                                      ctx.color.includes("pink") ? "bg-pink-500" :
+                                                      ctx.color.includes("indigo") ? "bg-indigo-500" : "bg-zinc-400"
+                                                    )} 
+                                                  />
+                                                )}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                        <Button 
+                                          variant="outline"
+                                          className="h-7 px-4 rounded-full font-bold text-[9px] uppercase tracking-wider border-zinc-200 dark:border-zinc-800 hover:bg-zinc-900 hover:text-white dark:hover:bg-zinc-100 dark:hover:text-zinc-900 shrink-0"
+                                          onClick={handleStatusUpdate}
+                                        >
+                                          {t("save")}
+                                        </Button>
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    );
-                  })}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      );
+                    })}
+              </div>
             </div>
           </div>
         )}

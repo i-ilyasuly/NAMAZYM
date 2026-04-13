@@ -26,6 +26,7 @@ interface PrayerCardProps {
   status: PrayerStatus;
   gender?: string;
   onClick: () => void;
+  noCard?: boolean;
 }
 
 export function PrayerCard({
@@ -35,6 +36,7 @@ export function PrayerCard({
   status,
   gender,
   onClick,
+  noCard = false,
 }: PrayerCardProps) {
   const { t } = useTranslation();
 
@@ -112,19 +114,69 @@ export function PrayerCard({
   const getPrayerIcon = (id: string) => {
     switch (id) {
       case "fajr":
-        return <Sunrise className="w-4 h-4 text-amber-500/80" />;
+        return <Sunrise className="w-5 h-5 text-amber-500/80" />;
       case "dhuhr":
-        return <Sun className="w-4 h-4 text-orange-500/80 stroke-[2.5px]" />;
+        return <Sun className="w-5 h-5 text-orange-500/80 stroke-[2.5px]" />;
       case "asr":
-        return <Sun className="w-3.5 h-3.5 text-amber-600/80 stroke-[1.5px]" />;
+        return <Sun className="w-5 h-5 text-amber-600/80 stroke-[1.5px]" />;
       case "maghrib":
-        return <Sunset className="w-4 h-4 text-indigo-400/80" />;
+        return <Sunset className="w-5 h-5 text-indigo-400/80" />;
       case "isha":
-        return <Moon className="w-4 h-4 text-slate-500/80" />;
+        return <Moon className="w-5 h-5 text-slate-500/80" />;
       default:
-        return <Clock className="w-4 h-4" />;
+        return <Clock className="w-5 h-5" />;
     }
   };
+
+  const content = (
+    <div className="flex flex-row items-center justify-between py-3 px-4">
+      <div className="flex items-center gap-3">
+        <div
+          className={cn(
+            "w-9 h-9 flex items-center justify-center transition-all duration-300 shrink-0 group-hover:scale-110",
+          )}
+        >
+          {getPrayerIcon(id)}
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-100 leading-tight">
+            {name}
+          </span>
+          <span className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 leading-tight tracking-wide">
+            {time}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        {status !== "none" && (
+          <span className={cn("text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline-block opacity-80", config.color)}>
+            {config.label}
+          </span>
+        )}
+        <div className={cn(
+          "w-9 h-9 flex items-center justify-center shrink-0 transition-all duration-300 group-hover:scale-110", 
+          config.color
+        )}>
+          <StatusIcon className="w-5 h-5" />
+        </div>
+      </div>
+    </div>
+  );
+
+  if (noCard) {
+    return (
+      <div 
+        onClick={onClick}
+        className={cn(
+          "w-full cursor-pointer transition-all duration-300 group",
+          status !== "none" && config.bg.split(' ').filter(c => c.startsWith('bg-')).join(' ')
+        )}
+      >
+        {content}
+      </div>
+    );
+  }
 
   return (
     <Card
@@ -134,39 +186,7 @@ export function PrayerCard({
       )}
       onClick={onClick}
     >
-      <CardContent className="flex flex-row items-center justify-between py-2 px-4">
-        <div className="flex items-center gap-3">
-          <div
-            className={cn(
-              "w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 bg-zinc-50 dark:bg-zinc-800/50 shadow-inner border border-zinc-100 dark:border-zinc-700/30 shrink-0 group-hover:scale-105",
-            )}
-          >
-            {getPrayerIcon(id)}
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-100 leading-tight">
-              {name}
-            </span>
-            <span className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 leading-tight tracking-wide">
-              {time}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {status !== "none" && (
-            <span className={cn("text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline-block opacity-80", config.color)}>
-              {config.label}
-            </span>
-          )}
-          <div className={cn(
-            "w-9 h-9 rounded-full flex items-center justify-center bg-white dark:bg-zinc-800/80 shadow-sm border border-zinc-100 dark:border-zinc-700/50 shrink-0 transition-all duration-300 group-hover:shadow-md", 
-            config.color
-          )}>
-            <StatusIcon className="w-4.5 h-4.5" />
-          </div>
-        </div>
-      </CardContent>
+      {content}
     </Card>
   );
 }
