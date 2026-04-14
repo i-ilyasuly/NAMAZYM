@@ -30,10 +30,17 @@ export interface PrayerRecord {
 
 export interface PrayerTimes {
   fajr: string;
+  sunrise: string;
   dhuhr: string;
   asr: string;
   maghrib: string;
   isha: string;
+}
+
+export interface LocationInfo {
+  name: string;
+  lat: number;
+  lng: number;
 }
 
 interface AppState {
@@ -54,6 +61,16 @@ interface AppState {
 
   locationError: string | null;
   setLocationError: (error: string | null) => void;
+
+  locationName: string | null;
+  setLocationName: (name: string | null) => void;
+
+  coordinates: { lat: number; lng: number } | null;
+  setCoordinates: (coords: { lat: number; lng: number } | null) => void;
+
+  searchHistory: LocationInfo[];
+  addSearchHistory: (location: LocationInfo) => void;
+  removeSearchHistory: (index: number) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -76,14 +93,32 @@ export const useStore = create<AppState>()(
 
       locationError: null,
       setLocationError: (locationError) => set({ locationError }),
+
+      locationName: null,
+      setLocationName: (locationName) => set({ locationName }),
+
+      coordinates: null,
+      setCoordinates: (coordinates) => set({ coordinates }),
+
+      searchHistory: [],
+      addSearchHistory: (location) => set((state) => {
+        const newHistory = [location, ...state.searchHistory.filter(l => l.name !== location.name)].slice(0, 10);
+        return { searchHistory: newHistory };
+      }),
+      removeSearchHistory: (index) => set((state) => ({
+        searchHistory: state.searchHistory.filter((_, i) => i !== index)
+      })),
     }),
     {
       name: "app-storage",
       partialize: (state) => ({ 
         gender: state.gender,
         prayerTimes: state.prayerTimes,
-        prayerTimesDate: state.prayerTimesDate
-      }), // Persist gender and prayer times
+        prayerTimesDate: state.prayerTimesDate,
+        locationName: state.locationName,
+        coordinates: state.coordinates,
+        searchHistory: state.searchHistory,
+      }), // Persist gender, prayer times, and location
     },
   ),
 );

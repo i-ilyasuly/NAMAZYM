@@ -14,6 +14,7 @@ import {
   CloudSun,
   Sunset,
   Moon,
+  CloudMoon,
   Plus,
 } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -114,6 +115,8 @@ export function PrayerCard({
   const getPrayerIcon = (id: string) => {
     switch (id) {
       case "fajr":
+        return <CloudMoon className="w-5 h-5 text-indigo-400/80" />;
+      case "sunrise":
         return <Sunrise className="w-5 h-5 text-amber-500/80" />;
       case "dhuhr":
         return <Sun className="w-5 h-5 text-orange-500/80 stroke-[2.5px]" />;
@@ -149,17 +152,19 @@ export function PrayerCard({
       </div>
 
       <div className="flex items-center gap-3">
-        {status !== "none" && (
+        {id !== "sunrise" && status !== "none" && (
           <span className={cn("text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline-block opacity-80", config.color)}>
             {config.label}
           </span>
         )}
-        <div className={cn(
-          "w-9 h-9 flex items-center justify-center shrink-0 transition-all duration-300 group-hover:scale-110", 
-          config.color
-        )}>
-          <StatusIcon className="w-5 h-5" />
-        </div>
+        {id !== "sunrise" && (
+          <div className={cn(
+            "w-9 h-9 flex items-center justify-center shrink-0 transition-all duration-300 group-hover:scale-110", 
+            config.color
+          )}>
+            <StatusIcon className="w-5 h-5" />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -167,9 +172,10 @@ export function PrayerCard({
   if (noCard) {
     return (
       <div 
-        onClick={onClick}
+        onClick={id === "sunrise" ? undefined : onClick}
         className={cn(
-          "w-full cursor-pointer transition-all duration-300 group",
+          "w-full transition-all duration-300 group",
+          id !== "sunrise" && "cursor-pointer",
           status !== "none" && config.bg.split(' ').filter(c => c.startsWith('bg-')).join(' ')
         )}
       >
@@ -181,10 +187,11 @@ export function PrayerCard({
   return (
     <Card
       className={cn(
-        "w-full cursor-pointer transition-all duration-300 border border-zinc-100 dark:border-zinc-800/50 hover:border-zinc-200 dark:hover:border-zinc-700 rounded-2xl overflow-hidden group shadow-sm hover:shadow-md",
+        "w-full transition-all duration-300 border border-zinc-100 dark:border-zinc-800/50 hover:border-zinc-200 dark:hover:border-zinc-700 rounded-2xl overflow-hidden group shadow-sm hover:shadow-md",
+        id !== "sunrise" && "cursor-pointer",
         status === "none" && !needsAttention ? "bg-white dark:bg-zinc-900/40" : config.bg,
       )}
-      onClick={onClick}
+      onClick={id === "sunrise" ? undefined : onClick}
     >
       {content}
     </Card>

@@ -11,6 +11,7 @@ export async function fetchPrayerTimes(lat: number, lng: number, date: Date): Pr
       const timings = data.data.timings;
       return {
         fajr: timings.Fajr,
+        sunrise: timings.Sunrise,
         dhuhr: timings.Dhuhr,
         asr: timings.Asr,
         maghrib: timings.Maghrib,

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot, setDoc, serverTimestamp, getDoc, collection, query, where, getDocs, limit, orderBy, writeBatch } from "firebase/firestore";
 import { format, subDays, startOfDay, startOfWeek, endOfWeek, eachDayOfInterval, addDays, isSameDay, startOfMonth, endOfMonth, addMonths, subMonths, isSameMonth } from "date-fns";
+import { kk, ru } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 import { auth, db } from "./firebase";
 import { useStore, PrayerStatus, PrayerRecord } from "./store";
@@ -19,7 +20,8 @@ import { PrayerLineChart } from "./components/PrayerLineChart";
 import { PrayerPieChart } from "./components/PrayerPieChart";
 import { PrayerDonutChart } from "./components/PrayerDonutChart";
 import { ShareScreen } from "./components/ShareScreen";
-import { motion, AnimatePresence } from "framer-motion";
+import { LocationSearchScreen } from "./components/LocationSearchScreen";
+import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import {
   Drawer,
   DrawerContent,
@@ -55,6 +57,7 @@ import {
   Sun,
   Plus,
   MapPin,
+  Navigation,
   LogOut,
   User,
   Bell,
@@ -100,6 +103,7 @@ import {
   Sunset,
   CloudSun,
   Share2,
+  Stars,
   LayoutGrid,
   Ban,
   Flame,
@@ -128,9 +132,14 @@ export default function App() {
     currentRecord,
     setCurrentRecord,
     prayerTimes,
+    prayerTimesDate,
     setPrayerTimes,
     locationError,
     setLocationError,
+    locationName,
+    setLocationName,
+    coordinates,
+    setCoordinates,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<
@@ -146,6 +155,7 @@ export default function App() {
   const [tempContext, setTempContext] = useState<string[]>([]);
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isStarrySky, setIsStarrySky] = useState(true);
   const [hijriDate, setHijriDate] = useState("");
   const [statsData, setStatsData] = useState<any[]>([]);
   const [allStatsRecords, setAllStatsRecords] = useState<PrayerRecord[] | null>(null);
@@ -157,6 +167,7 @@ export default function App() {
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [isShareScreenOpen, setIsShareScreenOpen] = useState(false);
+  const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
   const statsNeedsRefresh = useRef(false);
   const lastFetchedPeriod = useRef<number | null>(null);
 
@@ -169,6 +180,7 @@ export default function App() {
 
   const prayers = [
     { id: "fajr", name: t("fajr"), time: prayerTimes?.fajr },
+    { id: "sunrise", name: t("sunrise"), time: prayerTimes?.sunrise, isPseudo: true },
     { id: "dhuhr", name: t("dhuhr"), time: prayerTimes?.dhuhr },
     { id: "asr", name: t("asr"), time: prayerTimes?.asr },
     { id: "maghrib", name: t("maghrib"), time: prayerTimes?.maghrib },
@@ -188,6 +200,7 @@ export default function App() {
       const record = weeklyRecords[dateStr];
       if (record) {
         prayers.forEach(p => {
+          if (p.isPseudo) return;
           totalPrayers++;
           const status = record[p.id as keyof PrayerRecord];
           if (status === "prayed" || status === "congregation" || status === "delayed") {
@@ -650,12 +663,16 @@ export default function App() {
       (!("theme" in localStorage) &&
         window.matchMedia("(prefers-color-scheme: dark)").matches);
     setIsDarkMode(isDark);
+    
+    const starryPref = localStorage.getItem("starrySky");
+    setIsStarrySky(starryPref === null ? true : starryPref === "true");
+
     if (isDark) {
       document.documentElement.classList.add("dark");
     }
 
     try {
-      const hijri = new Intl.DateTimeFormat("kk-KZ-u-ca-islamic", {
+      const hijri = new Intl.DateTimeFormat(i18n.language === "kk" ? "kk-KZ-u-ca-islamic" : "ru-RU-u-ca-islamic", {
         day: "numeric",
         month: "long",
         year: "numeric",
@@ -665,7 +682,7 @@ export default function App() {
     } catch (e) {
       setHijriDate("");
     }
-  }, []);
+  }, [i18n.language]);
 
   const toggleDarkMode = () => {
     const newMode = !isDarkMode;
@@ -677,6 +694,12 @@ export default function App() {
       document.documentElement.classList.remove("dark");
       localStorage.setItem("theme", "light");
     }
+  };
+
+  const toggleStarrySky = () => {
+    const newMode = !isStarrySky;
+    setIsStarrySky(newMode);
+    localStorage.setItem("starrySky", String(newMode));
   };
 
   // Auth Listener
@@ -764,8 +787,19 @@ export default function App() {
     const todayStr = format(new Date(), "yyyy-MM-dd");
     
     // Check if we already have today's prayer times
-    if (!force && useStore.getState().prayerTimesDate === todayStr && useStore.getState().prayerTimes) {
+    if (!force && prayerTimesDate === todayStr && prayerTimes) {
       return; // Skip fetching if we already have today's times
+    }
+
+    // If we have coordinates saved, use them instead of geolocation
+    if (coordinates && !force) {
+      fetchPrayerTimes(coordinates.lat, coordinates.lng, new Date()).then(times => {
+        if (times) {
+          setPrayerTimes(times, todayStr);
+          setLocationError(null);
+        }
+      });
+      return;
     }
 
     setIsLoadingLocation(true);
@@ -776,7 +810,24 @@ export default function App() {
           const times = await fetchPrayerTimes(latitude, longitude, new Date());
           if (times) {
             setPrayerTimes(times, todayStr);
+            setCoordinates({ lat: latitude, lng: longitude });
             setLocationError(null);
+            
+            // Try to get location name
+            try {
+              const lang = i18n.language === "kk" ? "kk" : "ru";
+              const response = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1&accept-language=${lang}`
+              );
+              const data = await response.json();
+              if (data && data.address) {
+                const city = data.address.city || data.address.town || data.address.village || data.address.county;
+                const state = data.address.state;
+                setLocationName(city ? (state ? `${city}, ${state}` : city) : (state || "Unknown"));
+              }
+            } catch (e) {
+              console.error("Reverse geocoding failed", e);
+            }
           } else {
             setLocationError(t("location_error"));
           }
@@ -1052,37 +1103,38 @@ export default function App() {
   return (
     <div className={cn(
       "h-[100dvh] overflow-hidden font-sans text-foreground transition-colors duration-300 flex flex-col",
-      activeTab === "home" && isDarkMode ? "bg-transparent" : "bg-background"
+      activeTab === "home" && isDarkMode && isStarrySky ? "bg-transparent" : "bg-background"
     )}>
-      {activeTab === "home" && isDarkMode && <NightSky />}
+      {activeTab === "home" && isDarkMode && isStarrySky && <NightSky />}
       <main className="flex-1 flex flex-col max-w-md mx-auto w-full p-4 pt-6 overflow-y-auto custom-scrollbar">
         {activeTab === "home" && (
           <div className="flex flex-col flex-1">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
-                    {hijriDate}
-                  </p>
-                  <h1 className="text-3xl font-black tracking-tighter text-foreground leading-none">
-                    {format(new Date(), "d MMMM")}
+                <div className="flex flex-col gap-1">
+                  <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none">
+                    {format(new Date(), "d MMMM", { locale: i18n.language === "kk" ? kk : ru })}
                   </h1>
-                  <p className="text-xs font-medium text-muted-foreground/80">
-                    {format(new Date(), "EEEE")}
-                  </p>
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <span className="capitalize">{format(new Date(), "EEEE", { locale: i18n.language === "kk" ? kk : ru })}</span>
+                    <span>•</span>
+                    <span>{hijriDate}</span>
+                  </div>
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <button 
-                    onClick={() => fetchLocationAndTimes(true)}
+                    onClick={() => setIsLocationSearchOpen(true)}
                     disabled={isLoadingLocation}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/50 border border-muted/50 text-[10px] font-bold text-muted-foreground hover:text-foreground hover:bg-muted transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/50 border border-muted/50 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-muted transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none max-w-[180px]"
                   >
                     {isLoadingLocation ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
                     ) : (
-                      <MapPin className="w-3 h-3" /> 
+                      <Navigation className="w-3.5 h-3.5 shrink-0 fill-current" /> 
                     )}
-                    {locationError ? <span className="text-rose-500">Error</span> : isLoadingLocation ? "..." : "AUTO"}
+                    <span className="truncate">
+                      {locationError ? "Қателік" : isLoadingLocation ? "Іздеу..." : (locationName || "Тұрған орным")}
+                    </span>
                   </button>
                   <div className="flex items-center gap-1.5 flex-wrap justify-end">
                     {currentStreak > 0 && (
@@ -1114,12 +1166,13 @@ export default function App() {
             </div>
 
             <div className="flex-1 flex flex-col justify-center px-[15%] pt-4 pb-32">
-              <div className="bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl overflow-hidden shadow-sm">
-                {!prayerTimes
-                  ? Array.from({ length: 5 }).map((_, i) => (
-                      <Skeleton key={i} className="h-[64px] w-full border-b border-zinc-100 dark:border-zinc-800/50 last:border-0" />
-                    ))
-                  : prayers.map((prayer, index) => {
+              <LayoutGroup>
+                <div className="bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl overflow-hidden shadow-sm">
+                  {!prayerTimes
+                    ? Array.from({ length: 5 }).map((_, i) => (
+                        <Skeleton key={i} className="h-[64px] w-full border-b border-zinc-100 dark:border-zinc-800/50 last:border-0" />
+                      ))
+                    : prayers.map((prayer, index) => {
                       const isExpanded = expandedPrayerId === prayer.id;
                       const status = (currentRecord?.[prayer.id as keyof PrayerRecord] as PrayerStatus) || "none";
                       
@@ -1136,6 +1189,7 @@ export default function App() {
                             gender={gender}
                             noCard={true}
                             onClick={() => {
+                              if (prayer.isPseudo) return;
                               if (isExpanded) {
                                 setExpandedPrayerId(null);
                                 setExpansionStep("status");
@@ -1191,7 +1245,7 @@ export default function App() {
                                                 layoutId="statusGlow"
                                                 transition={{ type: "spring", stiffness: 300, damping: 30 }}
                                                 className={cn(
-                                                  "absolute inset-0 rounded-full blur-xl opacity-10 -z-0 scale-75",
+                                                  "absolute inset-0 rounded-full blur-md opacity-[0.15] -z-0 scale-100",
                                                   s.id === "prayed" ? (gender === "female" ? "bg-emerald-500" : "bg-blue-500") :
                                                   s.id === "congregation" ? "bg-emerald-500" :
                                                   s.id === "delayed" ? "bg-amber-500" :
@@ -1263,7 +1317,8 @@ export default function App() {
                         </div>
                       );
                     })}
-              </div>
+                </div>
+              </LayoutGroup>
             </div>
           </div>
         )}
@@ -2060,6 +2115,30 @@ export default function App() {
                 <Switch checked={isDarkMode} onCheckedChange={toggleDarkMode} />
               </div>
 
+              {isDarkMode && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="flex items-center justify-between p-4 border-b last:border-0 bg-indigo-50/30 dark:bg-indigo-900/10"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+                      <Stars className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium leading-none">
+                        {t("starry_sky")}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t("starry_sky_desc")}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch checked={isStarrySky} onCheckedChange={toggleStarrySky} />
+                </motion.div>
+              )}
+
               <div className="flex items-center justify-between p-4 border-b last:border-0">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
@@ -2453,6 +2532,13 @@ export default function App() {
         statsData={statsData}
         currentStreak={currentStreak}
         weeklyRecords={weeklyRecords}
+      />
+      <LocationSearchScreen
+        isOpen={isLocationSearchOpen}
+        onClose={() => setIsLocationSearchOpen(false)}
+        onLocationSelected={() => {
+          // Additional logic if needed when location is selected
+        }}
       />
     </div>
   );
