@@ -13,7 +13,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Moon, Mail, Lock, Loader2 } from 'lucide-react';
+import { Mail, Lock } from 'lucide-react';
+import { AppLogo } from './AppLogo';
+import { LoadingScreen } from './LoadingScreen';
 
 export function AuthScreen() {
   const { t } = useTranslation();
@@ -95,7 +97,7 @@ export function AuthScreen() {
       setError('');
       setResetMessage('');
       await sendPasswordResetEmail(auth, email);
-      setResetMessage("Құпиясөзді қалпына келтіру сілтемесі поштаңызға жіберілді!");
+      setResetMessage("Құпиясөзді қалпына келтіру сілтемесі поштаңызға жіделді!");
     } catch (err: any) {
       setError(err.message || "Қателік кетті");
     } finally {
@@ -105,11 +107,10 @@ export function AuthScreen() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4">
+      {isLoading && <LoadingScreen message={t('loading')} />}
       <div className="w-full max-w-md space-y-6">
         <div className="flex flex-col items-center space-y-2 text-center">
-          <div className="w-16 h-16 bg-slate-900 dark:bg-slate-800 rounded-2xl flex items-center justify-center shadow-lg mb-4">
-            <Moon className="w-8 h-8 text-white" />
-          </div>
+          <AppLogo size={80} className="mb-4 shadow-xl" />
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             {t('app_name', { defaultValue: 'Намаз Трекер' })}
           </h1>
@@ -173,7 +174,6 @@ export function AuthScreen() {
                     </div>
                   </div>
                   <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Кіру
                   </Button>
                 </form>
@@ -272,7 +272,6 @@ export function AuthScreen() {
                     </div>
                   </div>
                   <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Тіркелу
                   </Button>
                 </form>

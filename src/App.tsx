@@ -21,6 +21,7 @@ import { PrayerPieChart } from "./components/PrayerPieChart";
 import { PrayerDonutChart } from "./components/PrayerDonutChart";
 import { ShareScreen } from "./components/ShareScreen";
 import { LocationSearchScreen } from "./components/LocationSearchScreen";
+import { LoadingScreen } from "./components/LoadingScreen";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import {
   Drawer,
@@ -140,7 +141,17 @@ export default function App() {
     setLocationName,
     coordinates,
     setCoordinates,
+    calculationMethod,
+    setCalculationMethod,
   } = useStore();
+
+  // Force refresh if method changed to 2 (ҚМДБ)
+  useEffect(() => {
+    if (calculationMethod !== 2) {
+      setPrayerTimes(null, "");
+      setCalculationMethod(2);
+    }
+  }, [calculationMethod, setPrayerTimes, setCalculationMethod]);
 
   const [activeTab, setActiveTab] = useState<
     "home" | "calendar" | "statistics" | "settings"
@@ -170,6 +181,44 @@ export default function App() {
   const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
   const statsNeedsRefresh = useRef(false);
   const lastFetchedPeriod = useRef<number | null>(null);
+  const horizontalCalendarRef = useRef<HTMLDivElement>(null);
+
+  const lastSelectedDate = useRef(selectedDate);
+  const isFirstHomeRender = useRef(true);
+
+  useEffect(() => {
+    if (activeTab === "home" && horizontalCalendarRef.current) {
+      const container = horizontalCalendarRef.current;
+      
+      const performScroll = () => {
+        const selectedBtn = container.querySelector('[data-selected="true"]') as HTMLElement;
+        if (selectedBtn) {
+          const isDateChanged = lastSelectedDate.current !== selectedDate;
+          const scrollLeft = selectedBtn.offsetLeft - container.offsetWidth / 2 + selectedBtn.offsetWidth / 2;
+          
+          const behavior = (isDateChanged && !isFirstHomeRender.current) ? "smooth" : "auto";
+          
+          container.scrollTo({ left: scrollLeft, behavior });
+          
+          lastSelectedDate.current = selectedDate;
+          isFirstHomeRender.current = false;
+        }
+      };
+
+      // Try multiple times to ensure the scroll happens after layout is stable
+      const timer1 = setTimeout(performScroll, 50);
+      const timer2 = setTimeout(performScroll, 300);
+      const timer3 = setTimeout(performScroll, 1000);
+      
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
+      };
+    } else {
+      isFirstHomeRender.current = true;
+    }
+  }, [activeTab, selectedDate]);
 
   const [calendarWeekStart, setCalendarWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [calendarView, setCalendarView] = useState<"weekly" | "monthly">("weekly");
@@ -453,10 +502,16 @@ export default function App() {
   }, [activeTab, user, statsPeriod]);
 
   useEffect(() => {
-    if (activeTab === "calendar" && user) {
-      // Fetch last 4 weeks of data for the calendar
-      const startDate = format(subDays(calendarWeekStart, 21), "yyyy-MM-dd");
-      const endDate = format(endOfWeek(calendarWeekStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
+    if ((activeTab === "calendar" || activeTab === "home") && user) {
+      let startDate, endDate;
+      
+      if (activeTab === "home") {
+        startDate = format(subDays(new Date(), 60), "yyyy-MM-dd");
+        endDate = format(new Date(), "yyyy-MM-dd");
+      } else {
+        startDate = format(subDays(calendarWeekStart, 21), "yyyy-MM-dd");
+        endDate = format(endOfWeek(calendarWeekStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
+      }
       
       const q = query(
         collection(db, "users", user.uid, "prayer_records"),
@@ -709,6 +764,7 @@ export default function App() {
       setAuthReady(true); // Unblock UI immediately
       
       if (currentUser) {
+        setIsCheckingGender(true); // Ensure we are in checking state when user logs in
         // Run Firestore operations in background
         (async () => {
           try {
@@ -717,15 +773,11 @@ export default function App() {
             
             if (userDoc.exists()) {
               const data = userDoc.data();
-              if (data.gender) {
-                setGender(data.gender);
-              } else if (!data.createdAt) {
-                // Old user from before this update -> default to male
-                await setDoc(userRef, { gender: "male" }, { merge: true });
-                setGender("male");
-              } else {
-                // New user who hasn't selected gender yet
+              // If gender is missing, we need to ask for it
+              if (!data.gender) {
                 setGender(null);
+              } else {
+                setGender(data.gender);
               }
               
               // Update last login
@@ -737,7 +789,7 @@ export default function App() {
               }, { merge: true });
             } else {
               // Brand new user
-              setGender(null); // Clear persisted gender from previous sessions
+              setGender(null);
               await setDoc(userRef, {
                 displayName: currentUser.displayName,
                 email: currentUser.email,
@@ -754,6 +806,7 @@ export default function App() {
         })();
       } else {
         setIsCheckingGender(false);
+        setGender(null); // Clear gender on logout
       }
     });
     return unsubscribe;
@@ -793,7 +846,7 @@ export default function App() {
 
     // If we have coordinates saved, use them instead of geolocation
     if (coordinates && !force) {
-      fetchPrayerTimes(coordinates.lat, coordinates.lng, new Date()).then(times => {
+      fetchPrayerTimes(coordinates.lat, coordinates.lng, new Date(), calculationMethod).then(times => {
         if (times) {
           setPrayerTimes(times, todayStr);
           setLocationError(null);
@@ -807,7 +860,7 @@ export default function App() {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const { latitude, longitude } = position.coords;
-          const times = await fetchPrayerTimes(latitude, longitude, new Date());
+          const times = await fetchPrayerTimes(latitude, longitude, new Date(), calculationMethod);
           if (times) {
             setPrayerTimes(times, todayStr);
             setCoordinates({ lat: latitude, lng: longitude });
@@ -822,8 +875,10 @@ export default function App() {
               const data = await response.json();
               if (data && data.address) {
                 const city = data.address.city || data.address.town || data.address.village || data.address.county;
-                const state = data.address.state;
-                setLocationName(city ? (state ? `${city}, ${state}` : city) : (state || "Unknown"));
+                const detail = data.address.suburb || data.address.neighbourhood || data.address.road || data.address.state;
+                const firstWordDetail = detail ? detail.split(/[ ,./]/)[0] : "";
+                const formatted = city ? (firstWordDetail && firstWordDetail !== city ? `${city}, ${firstWordDetail}` : city) : (detail || "Unknown");
+                setLocationName(formatted);
               }
             } catch (e) {
               console.error("Reverse geocoding failed", e);
@@ -847,14 +902,13 @@ export default function App() {
 
   useEffect(() => {
     fetchLocationAndTimes();
-  }, [user, t, setPrayerTimes, setLocationError]);
+  }, [user, t, prayerTimes, setLocationError]);
 
-  // Firestore Listener for Today's Record
+  // Firestore Listener for Selected Date's Record
   useEffect(() => {
     if (!user || !isAuthReady) return;
 
-    const todayStr = format(new Date(), "yyyy-MM-dd");
-    const docRef = doc(db, "users", user.uid, "prayer_records", todayStr);
+    const docRef = doc(db, "users", user.uid, "prayer_records", selectedDate);
 
     const unsubscribe = onSnapshot(
       docRef,
@@ -865,7 +919,7 @@ export default function App() {
           // Initialize empty record
           setCurrentRecord({
             uid: user.uid,
-            date: todayStr,
+            date: selectedDate,
             fajr: "none",
             dhuhr: "none",
             asr: "none",
@@ -881,7 +935,59 @@ export default function App() {
     );
 
     return unsubscribe;
-  }, [user, isAuthReady, setCurrentRecord]);
+  }, [user, isAuthReady, selectedDate, setCurrentRecord]);
+
+  // Auto-missed logic: Automatically mark prayers as 'missed' if the next prayer time has arrived
+  useEffect(() => {
+    if (!user || !prayerTimes || !currentRecord || currentRecord.date !== format(new Date(), "yyyy-MM-dd")) return;
+
+    const checkMissed = async () => {
+      const now = new Date();
+      const prayerIds = ["fajr", "dhuhr", "asr", "maghrib", "isha"];
+      
+      // Define when each prayer is considered "missed" (when the next prayer starts)
+      const nextPrayerTimes: Record<string, string> = {
+        fajr: prayerTimes.dhuhr,
+        dhuhr: prayerTimes.asr,
+        asr: prayerTimes.maghrib,
+        maghrib: prayerTimes.isha,
+        isha: "23:59", // Isha ends at the end of the day for this logic
+      };
+
+      let hasChanges = false;
+      const updates: any = {};
+
+      for (const id of prayerIds) {
+        const nextTimeStr = nextPrayerTimes[id];
+        if (!nextTimeStr) continue;
+
+        const [h, m] = nextTimeStr.split(":").map(Number);
+        const nextTime = new Date();
+        nextTime.setHours(h, m, 0, 0);
+
+        if (now > nextTime && currentRecord[id as keyof PrayerRecord] === "none") {
+          updates[id] = "missed";
+          hasChanges = true;
+        }
+      }
+
+      if (hasChanges) {
+        const docRef = doc(db, "users", user.uid, "prayer_records", currentRecord.date);
+        try {
+          await setDoc(docRef, { ...updates, updatedAt: serverTimestamp() }, { merge: true });
+        } catch (e) {
+          console.error("Auto-missed update failed", e);
+        }
+      }
+    };
+
+    // Run once on load/update
+    checkMissed();
+
+    // Also run every minute to catch transitions
+    const interval = setInterval(checkMissed, 60000);
+    return () => clearInterval(interval);
+  }, [user, prayerTimes, currentRecord]);
 
   const handleStatusUpdate = async () => {
     if (!user || !selectedPrayer || !tempStatus) return;
@@ -934,11 +1040,7 @@ export default function App() {
   };
 
   if (!isAuthReady) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
-        {t("loading")}
-      </div>
-    );
+    return <LoadingScreen message={t("loading")} />;
   }
 
   if (!user) {
@@ -1113,10 +1215,10 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-1">
                   <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none">
-                    {format(new Date(), "d MMMM", { locale: i18n.language === "kk" ? kk : ru })}
+                    {format(new Date(selectedDate), "d MMMM", { locale: i18n.language === "kk" ? kk : ru })}
                   </h1>
                   <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <span className="capitalize">{format(new Date(), "EEEE", { locale: i18n.language === "kk" ? kk : ru })}</span>
+                    <span className="capitalize">{format(new Date(selectedDate), "EEEE", { locale: i18n.language === "kk" ? kk : ru })}</span>
                     <span>•</span>
                     <span>{hijriDate}</span>
                   </div>
@@ -1165,14 +1267,78 @@ export default function App() {
               </div>
             </div>
 
+            <div className="mt-4 mb-2 px-[5%]">
+              <div className="border-b border-zinc-100 dark:border-zinc-800/50 pb-4">
+                <div className="flex overflow-x-auto no-scrollbar gap-1 px-1 snap-x snap-mandatory" ref={horizontalCalendarRef}>
+                  {(() => {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const days = Array.from({ length: 60 }).map((_, i) => {
+                      const d = new Date();
+                      d.setHours(0, 0, 0, 0);
+                      d.setDate(today.getDate() - 59 + i); // 59 days past + today
+                      return d;
+                    });
+                    
+                    return days.map((day, i) => {
+                      const dateStr = format(day, "yyyy-MM-dd");
+                      const isSelected = isSameDay(day, new Date(selectedDate));
+                      const isFuture = day > today;
+                      const statusColorName = getDominantStatusColor(dateStr);
+                      const dotColor = getStatusDotColor(statusColorName);
+                      
+                      return (
+                        <button
+                          key={i}
+                          data-selected={isSelected}
+                          onClick={() => {
+                            if (!isFuture) {
+                              setSelectedDate(dateStr);
+                            }
+                          }}
+                          disabled={isFuture}
+                          className={cn(
+                            "snap-center shrink-0 flex flex-col items-center justify-center w-11 h-14 rounded-2xl transition-all",
+                            isSelected 
+                              ? "bg-zinc-100 dark:bg-zinc-800 text-foreground shadow-sm" 
+                              : "bg-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/50 text-foreground",
+                            isFuture && "opacity-50 cursor-not-allowed hover:bg-transparent"
+                          )}
+                        >
+                          <span className={cn(
+                            "text-[9px] font-medium uppercase mb-0.5",
+                            isSelected ? "text-foreground" : "text-muted-foreground"
+                          )}>
+                            {['Жк', 'Дс', 'Сс', 'Ср', 'Бс', 'Жм', 'Сн'][day.getDay()]}
+                          </span>
+                          <span className="text-base font-bold leading-none">
+                            {format(day, "d")}
+                          </span>
+                          <div className="h-1 mt-1 flex items-center justify-center">
+                            {statusColorName && !isFuture && (
+                              <div className={cn(
+                                "w-1 h-1 rounded-full",
+                                dotColor
+                              )} />
+                            )}
+                          </div>
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            </div>
+
             <div className="flex-1 flex flex-col justify-center px-[15%] pt-4 pb-32">
               <LayoutGroup>
                 <div className="bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl overflow-hidden shadow-sm">
-                  {!prayerTimes
-                    ? Array.from({ length: 5 }).map((_, i) => (
-                        <Skeleton key={i} className="h-[64px] w-full border-b border-zinc-100 dark:border-zinc-800/50 last:border-0" />
-                      ))
-                    : prayers.map((prayer, index) => {
+                  <div className="flex flex-col">
+                    {!prayerTimes
+                      ? Array.from({ length: 5 }).map((_, i) => (
+                          <Skeleton key={i} className="h-[64px] w-full border-b border-zinc-100 dark:border-zinc-800/50 last:border-0" />
+                        ))
+                      : prayers.map((prayer, index) => {
                       const isExpanded = expandedPrayerId === prayer.id;
                       const status = (currentRecord?.[prayer.id as keyof PrayerRecord] as PrayerStatus) || "none";
                       
@@ -1222,7 +1388,7 @@ export default function App() {
                                         {[
                                           { id: "prayed", icon: User, color: gender === "female" ? "text-emerald-500" : "text-blue-500" },
                                           ...(gender === "male" ? [{ id: "congregation", icon: Users2, color: "text-emerald-500" }] : []),
-                                          { id: "delayed", icon: Clock, color: "text-amber-500" },
+                                          { id: "delayed", icon: Clock, color: "text-rose-500" },
                                           { id: "missed", icon: Ban, color: "text-zinc-900 dark:text-zinc-100" },
                                           ...(gender === "female" ? [{ id: "menstruation", icon: Flower2, color: "text-pink-500" }] : []),
                                           { id: "none", icon: Plus, color: "text-muted-foreground/40" },
@@ -1230,8 +1396,13 @@ export default function App() {
                                           <button
                                             key={s.id}
                                             onClick={() => {
+                                              if (s.id === "none") {
+                                                setTempStatus("none");
+                                                handleStatusUpdate();
+                                                return;
+                                              }
                                               setTempStatus(s.id as PrayerStatus);
-                                              if (s.id === "none" || s.id === "menstruation") {
+                                              if (s.id === "menstruation") {
                                                 handleStatusUpdate();
                                               } else {
                                                 setExpansionStep("context");
@@ -1248,7 +1419,7 @@ export default function App() {
                                                   "absolute inset-0 rounded-full blur-md opacity-[0.15] -z-0 scale-100",
                                                   s.id === "prayed" ? (gender === "female" ? "bg-emerald-500" : "bg-blue-500") :
                                                   s.id === "congregation" ? "bg-emerald-500" :
-                                                  s.id === "delayed" ? "bg-amber-500" :
+                                                  s.id === "delayed" ? "bg-rose-500" :
                                                   s.id === "missed" ? "bg-zinc-900 dark:bg-zinc-100" :
                                                   s.id === "menstruation" ? "bg-pink-500" : "bg-zinc-400"
                                                 )} 
@@ -1317,6 +1488,7 @@ export default function App() {
                         </div>
                       );
                     })}
+                  </div>
                 </div>
               </LayoutGroup>
             </div>
@@ -1868,17 +2040,7 @@ export default function App() {
             </div>
 
             {isLoadingStats ? (
-              <div className="space-y-6">
-                <div className="p-4 bg-card rounded-2xl border border-muted/40 shadow-sm">
-                  <Skeleton className="h-[300px] w-full rounded-xl" />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Skeleton className="h-20 w-full rounded-xl" />
-                  <Skeleton className="h-20 w-full rounded-xl" />
-                  <Skeleton className="h-20 w-full rounded-xl" />
-                  <Skeleton className="h-20 w-full rounded-xl" />
-                </div>
-              </div>
+              <LoadingScreen fullScreen={false} message={t("loading")} />
             ) : statsData.length > 0 ? (
               <div className="space-y-6">
                 <div className="p-2">
@@ -2072,9 +2234,28 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-                <div className="text-sm font-medium text-muted-foreground">
-                  Auto
-                </div>
+                <Select 
+                  value={calculationMethod.toString()} 
+                  onValueChange={(val) => {
+                    const method = parseInt(val);
+                    setCalculationMethod(method);
+                    setPrayerTimes(null, ""); // Clear to force refresh
+                  }}
+                >
+                  <SelectTrigger className="w-[140px] h-8 text-[11px]">
+                    <SelectValue placeholder="Method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2">Қазақстан (ҚМДБ)</SelectItem>
+                    <SelectItem value="14">Ресей (САМР)</SelectItem>
+                    <SelectItem value="13">Түркия (Diyanet)</SelectItem>
+                    <SelectItem value="3">Muslim World League</SelectItem>
+                    <SelectItem value="45">ISNA (North America)</SelectItem>
+                    <SelectItem value="1">Karachi</SelectItem>
+                    <SelectItem value="4">Makkah</SelectItem>
+                    <SelectItem value="5">Egypt</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="flex items-center justify-between p-4 border-b last:border-0">

@@ -71,6 +71,9 @@ interface AppState {
   searchHistory: LocationInfo[];
   addSearchHistory: (location: LocationInfo) => void;
   removeSearchHistory: (index: number) => void;
+
+  calculationMethod: number;
+  setCalculationMethod: (method: number) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -108,6 +111,9 @@ export const useStore = create<AppState>()(
       removeSearchHistory: (index) => set((state) => ({
         searchHistory: state.searchHistory.filter((_, i) => i !== index)
       })),
+
+      calculationMethod: 2,
+      setCalculationMethod: (calculationMethod) => set({ calculationMethod }),
     }),
     {
       name: "app-storage",
@@ -118,6 +124,7 @@ export const useStore = create<AppState>()(
         locationName: state.locationName,
         coordinates: state.coordinates,
         searchHistory: state.searchHistory,
+        calculationMethod: state.calculationMethod,
       }), // Persist gender, prayer times, and location
     },
   ),

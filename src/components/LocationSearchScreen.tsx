@@ -18,6 +18,7 @@ export function LocationSearchScreen({ isOpen, onClose, onLocationSelected }: Lo
   const [results, setResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const {
@@ -27,7 +28,8 @@ export function LocationSearchScreen({ isOpen, onClose, onLocationSelected }: Lo
     setLocationName,
     setCoordinates,
     setPrayerTimes,
-    setLocationError
+    setLocationError,
+    calculationMethod
   } = useStore();
 
   useEffect(() => {
@@ -44,15 +46,18 @@ export function LocationSearchScreen({ isOpen, onClose, onLocationSelected }: Lo
     }
 
     setIsSearching(true);
+    setSearchError(null);
     try {
       const lang = i18n.language === "kk" ? "kk" : "ru";
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&addressdetails=1&limit=5&accept-language=${lang}`
       );
+      if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
       setResults(data);
     } catch (error) {
       console.error("Error searching location:", error);
+      setSearchError("Іздеу кезінде қате шықты. Интернетті тексеріңіз.");
     } finally {
       setIsSearching(false);
     }
@@ -74,18 +79,16 @@ export function LocationSearchScreen({ isOpen, onClose, onLocationSelected }: Lo
   const formatLocationName = (item: any) => {
     const address = item.address;
     const city = address.city || address.town || address.village || address.county || address.state;
-    const country = address.country;
-    
-    if (city && country) {
-      return `${city}, ${country}`;
-    }
-    return item.display_name.split(',').slice(0, 2).join(',');
+    const detail = address.suburb || address.neighbourhood || address.road || address.state;
+    const firstWordDetail = detail ? detail.split(/[ ,./]/)[0] : "";
+    const formatted = city ? (firstWordDetail && firstWordDetail !== city ? `${city}, ${firstWordDetail}` : city) : (detail || "Unknown");
+    return formatted;
   };
 
   const handleSelectLocation = async (lat: number, lng: number, name: string) => {
     try {
       const todayStr = format(new Date(), "yyyy-MM-dd");
-      const times = await fetchPrayerTimes(lat, lng, new Date());
+      const times = await fetchPrayerTimes(lat, lng, new Date(), calculationMethod);
       
       if (times) {
         setPrayerTimes(times, todayStr);
@@ -118,8 +121,9 @@ export function LocationSearchScreen({ isOpen, onClose, onLocationSelected }: Lo
             let name = "Unknown Location";
             if (data && data.address) {
               const city = data.address.city || data.address.town || data.address.village || data.address.county;
-              const state = data.address.state;
-              name = city ? (state ? `${city}, ${state}` : city) : (state || "Unknown Location");
+              const detail = data.address.suburb || data.address.neighbourhood || data.address.road || data.address.state;
+              const firstWordDetail = detail ? detail.split(/[ ,./]/)[0] : "";
+              name = city ? (firstWordDetail && firstWordDetail !== city ? `${city}, ${firstWordDetail}` : city) : (detail || "Unknown Location");
             }
             
             await handleSelectLocation(latitude, longitude, name);
@@ -205,6 +209,10 @@ export function LocationSearchScreen({ isOpen, onClose, onLocationSelected }: Lo
                 {isSearching ? (
                   <div className="flex items-center justify-center py-8 text-muted-foreground">
                     <Loader2 className="w-5 h-5 animate-spin" />
+                  </div>
+                ) : searchError ? (
+                  <div className="text-center py-8 text-destructive text-sm bg-destructive/5 rounded-xl border border-destructive/10">
+                    {searchError}
                   </div>
                 ) : results.length > 0 ? (
                   results.map((item, index) => (

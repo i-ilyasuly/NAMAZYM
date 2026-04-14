@@ -73,8 +73,8 @@ export function PrayerCard({
       case "delayed":
         return {
           icon: Clock,
-          color: "text-amber-500",
-          bg: "bg-amber-500/5 border-amber-500/20 dark:bg-amber-500/10 dark:border-amber-500/30",
+          color: "text-rose-500",
+          bg: "bg-rose-500/5 border-rose-500/20 dark:bg-rose-500/10 dark:border-rose-500/30",
           label: t("status_delayed"),
         };
       case "missed":
@@ -176,7 +176,7 @@ export function PrayerCard({
         className={cn(
           "w-full transition-all duration-300 group",
           id !== "sunrise" && "cursor-pointer",
-          status !== "none" && config.bg.split(' ').filter(c => c.startsWith('bg-')).join(' ')
+          id !== "sunrise" && status === "none" && needsAttention ? "bg-amber-500/5 animate-pulse" : (status !== "none" ? config.bg.split(' ').filter(c => c.startsWith('bg-')).join(' ') : "")
         )}
       >
         {content}
@@ -189,7 +189,7 @@ export function PrayerCard({
       className={cn(
         "w-full transition-all duration-300 border border-zinc-100 dark:border-zinc-800/50 hover:border-zinc-200 dark:hover:border-zinc-700 rounded-2xl overflow-hidden group shadow-sm hover:shadow-md",
         id !== "sunrise" && "cursor-pointer",
-        status === "none" && !needsAttention ? "bg-white dark:bg-zinc-900/40" : config.bg,
+        id !== "sunrise" && needsAttention ? "bg-amber-500/5 animate-pulse" : (status === "none" ? "bg-white dark:bg-zinc-900/40" : config.bg),
       )}
       onClick={id === "sunrise" ? undefined : onClick}
     >

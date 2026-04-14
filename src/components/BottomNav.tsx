@@ -1,7 +1,8 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Home, BarChart2, Settings, Calendar } from 'lucide-react';
+import { BarChart2, Settings, Calendar } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { AppLogo } from './AppLogo';
 
 interface BottomNavProps {
   activeTab: 'home' | 'calendar' | 'statistics' | 'settings';
@@ -12,7 +13,7 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
   const { t } = useTranslation();
 
   const tabs = [
-    { id: 'home', icon: Home, label: t('home') },
+    { id: 'home', icon: null, label: t('home') },
     { id: 'calendar', icon: Calendar, label: t('calendar') },
     { id: 'statistics', icon: BarChart2, label: t('statistics') },
     { id: 'settings', icon: Settings, label: t('settings') },
@@ -32,7 +33,11 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
               isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
-            <Icon className={cn("w-6 h-6 mb-1", isActive && "stroke-[2.5px]")} />
+            {tab.id === 'home' ? (
+              <AppLogo size={24} withBackground={false} className={cn("mb-1", !isActive && "opacity-50")} />
+            ) : (
+              Icon && <Icon className={cn("w-6 h-6 mb-1", isActive && "stroke-[2.5px]")} />
+            )}
             <span className="text-[10px] font-medium">{tab.label}</span>
           </button>
         );
