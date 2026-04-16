@@ -1,5 +1,50 @@
 {
   "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user ID."
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "The user's display name."
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "The user's profile photo URL."
+        },
+        "username": {
+          "type": "string",
+          "description": "Unique username starting with @."
+        },
+        "bio": {
+          "type": "string",
+          "description": "User's short biography."
+        },
+        "gender": {
+          "type": "string",
+          "enum": ["male", "female"],
+          "description": "User's gender."
+        },
+        "lastNI": {
+          "type": "number",
+          "description": "Last known Namaz Index value."
+        },
+        "updatedAt": {
+          "type": "timestamp",
+          "description": "When the profile was last updated."
+        }
+      },
+      "required": ["uid", "email", "updatedAt"]
+    },
     "PrayerRecord": {
       "title": "PrayerRecord",
       "description": "A record of a user's prayers for a specific day.",
@@ -15,27 +60,27 @@
         },
         "fajr": {
           "type": "string",
-          "enum": ["none", "prayed", "delayed", "missed"],
+          "enum": ["none", "prayed", "congregation", "delayed", "missed", "menstruation"],
           "description": "Status of Fajr prayer."
         },
         "dhuhr": {
           "type": "string",
-          "enum": ["none", "prayed", "delayed", "missed"],
+          "enum": ["none", "prayed", "congregation", "delayed", "missed", "menstruation"],
           "description": "Status of Dhuhr prayer."
         },
         "asr": {
           "type": "string",
-          "enum": ["none", "prayed", "delayed", "missed"],
+          "enum": ["none", "prayed", "congregation", "delayed", "missed", "menstruation"],
           "description": "Status of Asr prayer."
         },
         "maghrib": {
           "type": "string",
-          "enum": ["none", "prayed", "delayed", "missed"],
+          "enum": ["none", "prayed", "congregation", "delayed", "missed", "menstruation"],
           "description": "Status of Maghrib prayer."
         },
         "isha": {
           "type": "string",
-          "enum": ["none", "prayed", "delayed", "missed"],
+          "enum": ["none", "prayed", "congregation", "delayed", "missed", "menstruation"],
           "description": "Status of Isha prayer."
         },
         "updatedAt": {
@@ -44,14 +89,85 @@
         }
       },
       "required": ["uid", "date", "fajr", "dhuhr", "asr", "maghrib", "isha", "updatedAt"]
+    },
+    "DailyScore": {
+      "title": "DailyScore",
+      "description": "Daily Namaz Index score aggregation.",
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "The date of the score."
+        },
+        "candle": {
+          "type": "object",
+          "description": "Candlestick data (open, high, low, close)."
+        },
+        "daily_summary": {
+          "type": "object",
+          "description": "Summary of the day's performance."
+        },
+        "updatedAt": {
+          "type": "timestamp",
+          "description": "When the score was last updated."
+        }
+      },
+      "required": ["date", "candle", "daily_summary", "updatedAt"]
+    },
+    "FriendRequest": {
+      "title": "FriendRequest",
+      "description": "A request to become friends.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["senderId", "receiverId", "status", "createdAt", "updatedAt"]
+    },
+    "Friend": {
+      "title": "Friend",
+      "description": "A friend connection.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["uid", "createdAt"]
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "User profile document."
+    },
+    "/users/{userId}/friends/{friendId}": {
+      "schema": {
+        "$ref": "#/entities/Friend"
+      },
+      "description": "Friend connection for a user."
+    },
+    "/friend_requests/{requestId}": {
+      "schema": {
+        "$ref": "#/entities/FriendRequest"
+      },
+      "description": "Friend requests between users."
+    },
     "/users/{userId}/prayer_records/{dateString}": {
       "schema": {
         "$ref": "#/entities/PrayerRecord"
       },
       "description": "Prayer records for a specific user, keyed by date."
+    },
+    "/users/{userId}/daily_scores/{dateString}": {
+      "schema": {
+        "$ref": "#/entities/DailyScore"
+      },
+      "description": "Daily Namaz Index scores for a specific user."
     }
   }
 }

@@ -18,12 +18,36 @@ export interface PrayerRecord {
   asr: PrayerStatus;
   maghrib: PrayerStatus;
   isha: PrayerStatus;
+  
+  // Extra Prayers
+  witr?: boolean;
+  tahajjud?: boolean;
+  tahajjudRakats?: number;
+  duha?: boolean;
+  duhaRakats?: number;
+  juma?: boolean; // Only relevant on Fridays
+
   contexts?: {
     fajr?: string[];
     dhuhr?: string[];
     asr?: string[];
     maghrib?: string[];
     isha?: string[];
+  };
+  // NP Engine fields
+  np_scores?: {
+    fajr?: number;
+    dhuhr?: number;
+    asr?: number;
+    maghrib?: number;
+    isha?: number;
+  };
+  np_breakdown?: {
+    fajr?: any;
+    dhuhr?: any;
+    asr?: any;
+    maghrib?: any;
+    isha?: any;
   };
   updatedAt: Date;
 }
@@ -74,6 +98,36 @@ interface AppState {
 
   calculationMethod: number;
   setCalculationMethod: (method: number) => void;
+
+  showChartMarkers: boolean;
+  setShowChartMarkers: (show: boolean) => void;
+  showChartPriceLine: boolean;
+  setShowChartPriceLine: (show: boolean) => void;
+  showChartCommunity: boolean;
+  setShowChartCommunity: (show: boolean) => void;
+  showChartMA: boolean;
+  setShowChartMA: (show: boolean) => void;
+  showChartVolume: boolean;
+  setShowChartVolume: (show: boolean) => void;
+
+  chartType: "baseline" | "candlestick" | "realtime";
+  setChartType: (type: "baseline" | "candlestick" | "realtime") => void;
+
+  // NP Engine / Analytics Data
+  dailyScores: Record<string, any>; // { [date]: DayAggregationOutput }
+  setDailyScore: (date: string, score: any) => void;
+  statsSummary: any | null;
+  setStatsSummary: (summary: any) => void;
+  isDarkMode: boolean;
+  setIsDarkMode: (isDark: boolean) => void;
+
+  username: string | null;
+  setUsername: (username: string | null) => void;
+  bio: string | null;
+  setBio: (bio: string | null) => void;
+  isPrivate: boolean;
+  setIsPrivate: (isPrivate: boolean) => void;
+  clearUserData: () => void;
 }
 
 export const useStore = create<AppState>()(
@@ -114,6 +168,43 @@ export const useStore = create<AppState>()(
 
       calculationMethod: 2,
       setCalculationMethod: (calculationMethod) => set({ calculationMethod }),
+
+      showChartMarkers: true,
+      setShowChartMarkers: (showChartMarkers) => set({ showChartMarkers }),
+      showChartPriceLine: true,
+      setShowChartPriceLine: (showChartPriceLine) => set({ showChartPriceLine }),
+      showChartCommunity: true,
+      setShowChartCommunity: (showChartCommunity) => set({ showChartCommunity }),
+      showChartMA: true,
+      setShowChartMA: (showChartMA) => set({ showChartMA }),
+      showChartVolume: false,
+      setShowChartVolume: (showChartVolume) => set({ showChartVolume }),
+
+      chartType: "baseline",
+      setChartType: (chartType) => set({ chartType }),
+
+      dailyScores: {},
+      setDailyScore: (date, score) => set((state) => ({
+        dailyScores: { ...state.dailyScores, [date]: score }
+      })),
+      statsSummary: null,
+      setStatsSummary: (statsSummary) => set({ statsSummary }),
+      isDarkMode: false,
+      setIsDarkMode: (isDarkMode) => set({ isDarkMode }),
+
+      username: null,
+      setUsername: (username) => set({ username }),
+      bio: null,
+      setBio: (bio) => set({ bio }),
+      isPrivate: false,
+      setIsPrivate: (isPrivate) => set({ isPrivate }),
+      clearUserData: () => set({ 
+        username: null, 
+        bio: null, 
+        dailyScores: {}, 
+        currentRecord: null, 
+        statsSummary: null 
+      }),
     }),
     {
       name: "app-storage",
@@ -125,6 +216,8 @@ export const useStore = create<AppState>()(
         coordinates: state.coordinates,
         searchHistory: state.searchHistory,
         calculationMethod: state.calculationMethod,
+        isDarkMode: state.isDarkMode,
+        chartType: state.chartType,
       }), // Persist gender, prayer times, and location
     },
   ),

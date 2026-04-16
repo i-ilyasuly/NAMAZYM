@@ -33,16 +33,6 @@ export function LoadingScreen({ message, fullScreen = true }: LoadingScreenProps
         <AppLogo size={fullScreen ? 120 : 80} animatedLetter={activeLetter} />
       </div>
       
-      {message && (
-        <motion.p
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-8 text-sm font-bold uppercase tracking-[0.2em] text-muted-foreground/60 animate-pulse"
-        >
-          {message}
-        </motion.p>
-      )}
-      
       {/* Subtle background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-20">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px]" />

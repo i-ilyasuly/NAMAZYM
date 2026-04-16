@@ -137,4 +137,10 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+  
+  /* Hide TradingView Lightweight Charts Attribution Logo */
+  #tv-attr-logo,
+  .tv-lightweight-charts table tr:last-child td:first-child a {
+    display: none !important;
+  }
 }

@@ -54,13 +54,12 @@ service cloud.firestore {
     }
 
     function isValidPrayerStatus(status) {
-      return status in ['none', 'prayed', 'delayed', 'missed'];
+      return status in ['none', 'prayed', 'congregation', 'delayed', 'missed', 'menstruation'];
     }
 
     function isValidPrayerRecord() {
       let data = request.resource.data;
       return hasRequiredFields(['uid', 'date', 'fajr', 'dhuhr', 'asr', 'maghrib', 'isha', 'updatedAt']) &&
-             hasOnlyAllowedFields(['uid', 'date', 'fajr', 'dhuhr', 'asr', 'maghrib', 'isha', 'updatedAt']) &&
              data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
              isValidDateString(data.date) &&
              isValidPrayerStatus(data.fajr) &&
@@ -71,15 +70,67 @@ service cloud.firestore {
              data.updatedAt is timestamp;
     }
 
+    function isValidUser() {
+      let data = request.resource.data;
+      return hasRequiredFields(['uid', 'email', 'updatedAt']) &&
+             data.uid is string && data.email is string &&
+             (!('username' in data) || (data.username is string && data.username.size() < 50)) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() < 500)) &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 1000)) &&
+             (!('gender' in data) || (data.gender in ['male', 'female'])) &&
+             (!('lastNI' in data) || (data.lastNI is number)) &&
+             (!('createdAt' in data) || (data.createdAt is timestamp)) &&
+             (!('lastLogin' in data) || (data.lastLogin is timestamp)) &&
+             data.updatedAt is timestamp;
+    }
+
+    function isValidFriendRequest() {
+      let data = request.resource.data;
+      return hasRequiredFields(['senderId', 'receiverId', 'status', 'createdAt', 'updatedAt']) &&
+             data.senderId is string && data.receiverId is string &&
+             data.status in ['pending', 'accepted', 'rejected'] &&
+             data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function isValidFriend() {
+      let data = request.resource.data;
+      return hasRequiredFields(['uid', 'createdAt']) &&
+             data.uid is string && data.createdAt is timestamp;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
 
-    match /users/{userId}/prayer_records/{dateString} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidPrayerRecord() && uidUnchanged() && request.resource.data.uid == userId && request.resource.data.date == dateString;
-      allow update: if isOwner(userId) && isValidPrayerRecord() && uidNotModified() && request.resource.data.uid == userId && request.resource.data.date == dateString;
-      allow delete: if isOwner(userId);
+    match /friend_requests/{requestId} {
+      allow read: if isAuthenticated() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid && isValidFriendRequest();
+      allow update: if isAuthenticated() && resource.data.receiverId == request.auth.uid && isValidFriendRequest();
+      allow delete: if isAuthenticated() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser();
+      allow update: if isOwner(userId) && isValidUser();
+
+      match /friends/{friendId} {
+        allow read: if isAuthenticated();
+        allow write: if isOwner(userId) && isValidFriend();
+      }
+
+      match /prayer_records/{dateString} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidPrayerRecord() && uidUnchanged() && request.resource.data.uid == userId && request.resource.data.date == dateString;
+        allow update: if isOwner(userId) && isValidPrayerRecord() && uidNotModified() && request.resource.data.uid == userId && request.resource.data.date == dateString;
+        allow delete: if isOwner(userId);
+      }
+
+      match /daily_scores/{dateString} {
+        allow read: if isAuthenticated();
+        allow write: if isOwner(userId);
+      }
     }
   }
 }

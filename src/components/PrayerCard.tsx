@@ -16,6 +16,7 @@ import {
   Moon,
   CloudMoon,
   Plus,
+  Check,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -136,10 +137,18 @@ export function PrayerCard({
       <div className="flex items-center gap-3">
         <div
           className={cn(
-            "w-9 h-9 flex items-center justify-center transition-all duration-300 shrink-0 group-hover:scale-110",
+            "w-9 h-9 flex items-center justify-center transition-all duration-300 shrink-0 group-hover:scale-110 relative",
           )}
         >
           {getPrayerIcon(id)}
+          {(status === "prayed" || status === "congregation" || status === "delayed") && (
+            <div className={cn(
+              "absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center",
+              status === "delayed" ? "bg-rose-500" : "bg-emerald-500"
+            )}>
+              <Check className="w-2.5 h-2.5 text-white" />
+            </div>
+          )}
         </div>
         <div className="flex flex-col gap-0.5">
           <span className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-100 leading-tight">

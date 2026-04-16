@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, onSnapshot, setDoc, serverTimestamp, getDoc, collection, query, where, getDocs, limit, orderBy, writeBatch } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, serverTimestamp, getDoc, collection, query, where, getDocs, limit, orderBy, writeBatch, deleteDoc } from "firebase/firestore";
 import { format, subDays, startOfDay, startOfWeek, endOfWeek, eachDayOfInterval, addDays, isSameDay, startOfMonth, endOfMonth, addMonths, subMonths, isSameMonth } from "date-fns";
 import { kk, ru } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
@@ -8,6 +8,7 @@ import { auth, db } from "./firebase";
 import { useStore, PrayerStatus, PrayerRecord } from "./store";
 import { fetchPrayerTimes } from "./lib/aladhan";
 import { AuthScreen } from "./components/AuthScreen";
+import { toast } from "sonner";
 import { BottomNav } from "./components/BottomNav";
 import { PrayerCard } from "./components/PrayerCard";
 import NightSky from "./components/NightSky";
@@ -22,6 +23,8 @@ import { PrayerDonutChart } from "./components/PrayerDonutChart";
 import { ShareScreen } from "./components/ShareScreen";
 import { LocationSearchScreen } from "./components/LocationSearchScreen";
 import { LoadingScreen } from "./components/LoadingScreen";
+import { AnalyticsScreen } from "./components/AnalyticsScreen";
+import { CommunityScreen } from "./components/CommunityScreen";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import {
   Drawer,
@@ -43,6 +46,8 @@ import { Card, CardContent } from "./components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "./components/ui/avatar";
 import { Switch } from "./components/ui/switch";
 import { Separator } from "./components/ui/separator";
+import { Input } from "./components/ui/input";
+import { Textarea } from "./components/ui/textarea";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -116,10 +121,89 @@ import {
   Hexagon,
   CircleDashed,
   AlignEndHorizontal,
-  Loader2
+  Loader2,
+  Award,
+  RefreshCw,
+  Database,
+  Settings2,
+  Sparkles,
+  Target,
+  TrendingUp,
+  Globe,
+  UserX
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./components/ui/dialog";
 import { cn } from "./lib/utils";
+import { calculateDelayPercent, calculateBaseNP, applyModifiers, aggregateDayScore, DayAggregationInput, PrayerName, PrayerLocation, KhushuLevel, prepareAggregationInput, calculateInactivityDecay } from "./lib/scoreEngine";
 import "./i18n";
+
+// --- Settings Helper Components ---
+function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-3">
+      <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-4">
+        {title}
+      </h3>
+      <div className="bg-card border rounded-3xl overflow-hidden divide-y">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SettingsItem({ 
+  icon, 
+  bgColor, 
+  title, 
+  description, 
+  onClick, 
+  rightElement, 
+  showChevron = true,
+  disabled = false
+}: { 
+  icon: React.ReactNode; 
+  bgColor: string; 
+  title: string; 
+  description: string; 
+  onClick?: () => void; 
+  rightElement?: React.ReactNode;
+  showChevron?: boolean;
+  disabled?: boolean;
+}) {
+  const isClickable = onClick && !disabled;
+  const Tag = isClickable && !rightElement ? "button" : "div";
+
+  return (
+    <Tag 
+      type={Tag === "button" ? "button" : undefined}
+      className={cn(
+        "w-full flex items-center gap-4 p-4 text-left transition-colors",
+        isClickable ? "hover:bg-muted/50 active:bg-muted cursor-pointer" : "cursor-default",
+        disabled && "opacity-50"
+      )}
+      onClick={disabled ? undefined : onClick}
+    >
+      <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center shrink-0", bgColor)}>
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold leading-none">{title}</p>
+        <p className="text-xs text-muted-foreground mt-1 truncate">{description}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        {rightElement}
+        {showChevron && onClick && !rightElement && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+      </div>
+    </Tag>
+  );
+}
 
 export default function App() {
   const { t, i18n } = useTranslation();
@@ -143,6 +227,24 @@ export default function App() {
     setCoordinates,
     calculationMethod,
     setCalculationMethod,
+    isDarkMode,
+    setIsDarkMode,
+    username,
+    setUsername,
+    bio,
+    setBio,
+    showChartMarkers,
+    setShowChartMarkers,
+    showChartPriceLine,
+    setShowChartPriceLine,
+    showChartCommunity,
+    setShowChartCommunity,
+    showChartMA,
+    setShowChartMA,
+    chartType,
+    setChartType,
+    isPrivate,
+    setIsPrivate
   } = useStore();
 
   // Force refresh if method changed to 2 (ҚМДБ)
@@ -154,7 +256,7 @@ export default function App() {
   }, [calculationMethod, setPrayerTimes, setCalculationMethod]);
 
   const [activeTab, setActiveTab] = useState<
-    "home" | "calendar" | "statistics" | "settings"
+    "home" | "calendar" | "statistics" | "settings" | "analytics" | "leaderboard" | "community"
   >("home");
   const [selectedPrayer, setSelectedPrayer] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
@@ -165,7 +267,6 @@ export default function App() {
   const [tempStatus, setTempStatus] = useState<PrayerStatus | null>(null);
   const [tempContext, setTempContext] = useState<string[]>([]);
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [isStarrySky, setIsStarrySky] = useState(true);
   const [hijriDate, setHijriDate] = useState("");
   const [statsData, setStatsData] = useState<any[]>([]);
@@ -174,11 +275,24 @@ export default function App() {
   const [activeChartType, setActiveChartType] = useState<string>("donut");
   const [statsStatus, setStatsStatus] = useState<string>("all");
   const [isGeneratingMock, setIsGeneratingMock] = useState(false);
+  const [isProfileEditing, setIsProfileEditing] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [tempUsername, setTempUsername] = useState(username || "");
+  const [tempBio, setTempBio] = useState(bio || "");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [leaderboardUsers, setLeaderboardUsers] = useState<any[]>([]);
+  const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
   const [isCheckingGender, setIsCheckingGender] = useState(true);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [isShareScreenOpen, setIsShareScreenOpen] = useState(false);
   const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
+  const [isUsernameModalOpen, setIsUsernameModalOpen] = useState(false);
+  const [setupUsername, setSetupUsername] = useState("");
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+  const [usernameError, setUsernameError] = useState("");
+  const [isSavingSetup, setIsSavingSetup] = useState(false);
+
   const statsNeedsRefresh = useRef(false);
   const lastFetchedPeriod = useRef<number | null>(null);
   const horizontalCalendarRef = useRef<HTMLDivElement>(null);
@@ -340,6 +454,28 @@ export default function App() {
     setTouchStartX(null);
   };
 
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      if (!user) return;
+      try {
+        const userSnap = await getDoc(doc(db, "users", user.uid));
+        if (userSnap.exists()) {
+          const data = userSnap.data();
+          if (data.username) setUsername(data.username);
+          if (data.bio) setBio(data.bio);
+          if (data.gender) setGender(data.gender);
+          if (data.isPrivate !== undefined) setIsPrivate(data.isPrivate);
+        }
+      } catch (error) {
+        console.error("Error fetching user profile:", error);
+      }
+    };
+    
+    if (user && isAuthReady) {
+      fetchUserProfile();
+    }
+  }, [user, isAuthReady, setUsername, setBio, setGender]);
+
   const calculateStreak = async () => {
     if (!user) return;
     
@@ -394,6 +530,64 @@ export default function App() {
   useEffect(() => {
     if (user && isAuthReady) {
       calculateStreak();
+      
+      // --- INACTIVITY DECAY CHECK ---
+      const checkDecay = async () => {
+        const lastLoginStr = localStorage.getItem(`last_login_${user.uid}`);
+        const todayStr = format(new Date(), "yyyy-MM-dd");
+        
+        if (lastLoginStr && lastLoginStr !== todayStr) {
+          const lastLoginDate = new Date(lastLoginStr);
+          const todayDate = new Date(todayStr);
+          const diffDays = Math.floor((todayDate.getTime() - lastLoginDate.getTime()) / (1000 * 60 * 60 * 24));
+          
+          if (diffDays > 1) {
+            // Apply decay for missed days
+            try {
+              const prevDateStr = format(subDays(todayDate, diffDays), "yyyy-MM-dd");
+              const prevScoreSnap = await getDoc(doc(db, "users", user.uid, "daily_scores", prevDateStr));
+              
+              if (prevScoreSnap.exists()) {
+                let currentClose = prevScoreSnap.data().candle?.close || 50.00;
+                const batch = writeBatch(db);
+                
+                for (let i = 1; i < diffDays; i++) {
+                  const decayDate = format(subDays(todayDate, diffDays - i), "yyyy-MM-dd");
+                  const decayedClose = calculateInactivityDecay(currentClose, 1);
+                  
+                  const scoreRef = doc(db, "users", user.uid, "daily_scores", decayDate);
+                  batch.set(scoreRef, {
+                    date: decayDate,
+                    candle: {
+                      open: currentClose,
+                      high: currentClose,
+                      low: decayedClose,
+                      close: decayedClose
+                    },
+                    daily_summary: {
+                      total_np: decayedClose,
+                      fard_count: 0,
+                      missed_count: 5, // Assume all missed if not logged
+                      delayed_count: 0,
+                      streak_eligible: false
+                    },
+                    updatedAt: serverTimestamp(),
+                    isDecay: true
+                  }, { merge: true });
+                  
+                  currentClose = decayedClose;
+                }
+                await batch.commit();
+              }
+            } catch (error) {
+              console.error("Error applying inactivity decay:", error);
+            }
+          }
+        }
+        localStorage.setItem(`last_login_${user.uid}`, todayStr);
+      };
+      
+      checkDecay();
     }
   }, [user, isAuthReady, currentRecord]);
 
@@ -401,37 +595,123 @@ export default function App() {
   const generateMockData = async () => {
     if (!user) return;
     setIsGeneratingMock(true);
-    const batch = writeBatch(db);
     const statuses: PrayerStatus[] = ["prayed", "congregation", "delayed", "missed"];
     
-    for (let i = 0; i < 30; i++) {
-      const date = subDays(new Date(), i);
-      const dateStr = format(date, "yyyy-MM-dd");
-      const docRef = doc(db, "users", user.uid, "prayer_records", dateStr);
-      
-      const record = {
-        uid: user.uid,
-        date: dateStr,
-        fajr: statuses[Math.floor(Math.random() * statuses.length)],
-        dhuhr: statuses[Math.floor(Math.random() * statuses.length)],
-        asr: statuses[Math.floor(Math.random() * statuses.length)],
-        maghrib: statuses[Math.floor(Math.random() * statuses.length)],
-        isha: statuses[Math.floor(Math.random() * statuses.length)],
-        updatedAt: serverTimestamp(),
-      };
-      batch.set(docRef, record, { merge: true });
-    }
-    
     try {
+      const batch = writeBatch(db);
+      // We need to generate from oldest to newest for NI continuity
+      for (let i = 29; i >= 0; i--) {
+        const date = subDays(new Date(), i);
+        const dateStr = format(date, "yyyy-MM-dd");
+        
+        const record = {
+          uid: user.uid,
+          date: dateStr,
+          fajr: statuses[Math.floor(Math.random() * statuses.length)],
+          dhuhr: statuses[Math.floor(Math.random() * statuses.length)],
+          asr: statuses[Math.floor(Math.random() * statuses.length)],
+          maghrib: statuses[Math.floor(Math.random() * statuses.length)],
+          isha: statuses[Math.floor(Math.random() * statuses.length)],
+          updatedAt: serverTimestamp(),
+        };
+        
+        const docRef = doc(db, "users", user.uid, "prayer_records", dateStr);
+        batch.set(docRef, record, { merge: true });
+      }
+      
       await batch.commit();
-      alert("Mock data generated successfully!");
+      toast.success("Тест деректері сәтті жасалды!");
       fetchStats(true);
     } catch (error) {
       console.error("Error generating mock data:", error);
+      toast.error("Тест деректерін жасау кезінде қате шықты.");
     } finally {
       setIsGeneratingMock(false);
     }
   };
+
+  const syncAllData = async () => {
+    if (!user) return;
+    setIsSyncing(true);
+    try {
+      const recordsSnap = await getDocs(query(collection(db, "users", user.uid, "prayer_records"), orderBy("date", "asc")));
+      const records = recordsSnap.docs.map(d => d.data() as PrayerRecord);
+      
+      // Delete orphaned daily_scores (mock data that doesn't exist in prayer_records)
+      const scoresSnap = await getDocs(collection(db, "users", user.uid, "daily_scores"));
+      const validDates = new Set(records.map(r => r.date));
+      
+      // Use batches for both deletions and updates to improve performance
+      let batch = writeBatch(db);
+      let operationCount = 0;
+      
+      const commitBatchIfNeeded = async () => {
+        if (operationCount >= 400) { // Firestore batch limit is 500
+          await batch.commit();
+          batch = writeBatch(db);
+          operationCount = 0;
+        }
+      };
+
+      for (const docSnap of scoresSnap.docs) {
+        if (!validDates.has(docSnap.id)) {
+          batch.delete(docSnap.ref);
+          operationCount++;
+          await commitBatchIfNeeded();
+        }
+      }
+
+      let prevClose = 50.00;
+      for (const record of records) {
+        const aggregationInput = prepareAggregationInput(record, gender || 'male');
+        const dayScore = aggregateDayScore(aggregationInput, prevClose);
+        
+        const docRef = doc(db, "users", user.uid, "daily_scores", record.date);
+        batch.set(docRef, {
+          date: record.date,
+          ...dayScore,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        
+        operationCount++;
+        await commitBatchIfNeeded();
+        
+        prevClose = dayScore.candle.close;
+      }
+      
+      // Update lastNI in profile
+      const userRef = doc(db, "users", user.uid);
+      batch.set(userRef, { lastNI: prevClose, updatedAt: serverTimestamp() }, { merge: true });
+      
+      await batch.commit();
+      
+      toast.success("Деректер синхрондалды!");
+    } catch (error) {
+      console.error("Error syncing data:", error);
+      toast.error("Синхрондау кезінде қате шықты.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const fetchLeaderboard = async () => {
+    setIsLoadingLeaderboard(true);
+    try {
+      const q = query(collection(db, "users"), orderBy("lastNI", "desc"), limit(50));
+      const snap = await getDocs(q);
+      setLeaderboardUsers(snap.docs.map(d => d.data()));
+    } catch (error) {
+      console.error("Error fetching leaderboard:", error);
+    } finally {
+      setIsLoadingLeaderboard(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "leaderboard") {
+      fetchLeaderboard();
+    }
+  }, [activeTab]);
 
   const processStats = (records: PrayerRecord[], days: number) => {
     const filteredRecords = records.slice(0, days);
@@ -509,8 +789,15 @@ export default function App() {
         startDate = format(subDays(new Date(), 60), "yyyy-MM-dd");
         endDate = format(new Date(), "yyyy-MM-dd");
       } else {
-        startDate = format(subDays(calendarWeekStart, 21), "yyyy-MM-dd");
-        endDate = format(endOfWeek(calendarWeekStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
+        // In calendar tab, we need data for the whole current month view
+        // Plus some buffer for the weekly view
+        const monthStart = startOfMonth(currentMonth);
+        const monthEnd = endOfMonth(monthStart);
+        const viewStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+        const viewEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+        
+        startDate = format(subDays(viewStart, 7), "yyyy-MM-dd"); // Add buffer
+        endDate = format(addDays(viewEnd, 7), "yyyy-MM-dd");
       }
       
       const q = query(
@@ -529,7 +816,7 @@ export default function App() {
       
       return () => unsubscribe();
     }
-  }, [activeTab, user, calendarWeekStart]);
+  }, [activeTab, user, currentMonth]);
 
   const handleCalendarCellClick = (date: string, prayerId: string) => {
     setSelectedDate(date);
@@ -627,7 +914,7 @@ export default function App() {
 
   const getDynamicDayScore = (dateStr: string) => {
     const record = weeklyRecords[dateStr];
-    if (!record) return { score: 0, colorClass: "bg-transparent", sizeClass: "w-1.5 h-1.5" };
+    if (!record) return { score: 0, colorClass: "bg-transparent", sizePx: 6 };
 
     const statuses: PrayerStatus[] = [
       record.fajr as PrayerStatus,
@@ -637,7 +924,7 @@ export default function App() {
       record.isha as PrayerStatus
     ].filter(s => s && s !== "none");
 
-    if (statuses.length === 0) return { score: 0, colorClass: "bg-transparent", sizeClass: "w-1.5 h-1.5" };
+    if (statuses.length === 0) return { score: 0, colorClass: "bg-transparent", sizePx: 6 };
 
     let score = 0;
     let hasMenstruation = false;
@@ -650,34 +937,22 @@ export default function App() {
     });
 
     if (hasMenstruation) {
-      return { score: 100, colorClass: "bg-pink-500", sizeClass: "w-6 h-6" };
+      return { score: 100, colorClass: "bg-pink-500", sizePx: 24 };
     }
 
+    const dominantColorName = getDominantStatusColor(dateStr);
     let colorClass = "bg-transparent";
-    let sizeClass = "w-1.5 h-1.5";
+    
+    if (dominantColorName === "emerald") colorClass = "bg-emerald-500";
+    else if (dominantColorName === "blue") colorClass = "bg-blue-500";
+    else if (dominantColorName === "rose") colorClass = "bg-rose-500";
+    else if (dominantColorName === "zinc") colorClass = "bg-zinc-500";
+    else if (dominantColorName === "pink") colorClass = "bg-pink-500";
 
-    if (score >= 80) {
-      colorClass = "bg-emerald-500";
-      sizeClass = "w-6 h-6";
-    } else if (score >= 55) {
-      colorClass = "bg-blue-500";
-      sizeClass = "w-5 h-5";
-    } else if (score >= 30) {
-      colorClass = "bg-amber-500";
-      sizeClass = "w-3.5 h-3.5";
-    } else if (score >= 10) {
-      colorClass = "bg-rose-500";
-      sizeClass = "w-2.5 h-2.5";
-    } else if (score > 0) {
-      colorClass = "bg-zinc-500";
-      sizeClass = "w-1.5 h-1.5";
-    } else {
-      // 0 score (all missed)
-      colorClass = "bg-zinc-500/20";
-      sizeClass = "w-1.5 h-1.5";
-    }
+    // Calculate exact size based on score (from 8px to 24px)
+    const sizePx = score === 0 ? 8 : 10 + (score / 100) * 14;
 
-    return { score, colorClass, sizeClass };
+    return { score, colorClass, sizePx };
   };
 
   const getStatusDotColor = (colorName: string | null) => {
@@ -989,6 +1264,107 @@ export default function App() {
     return () => clearInterval(interval);
   }, [user, prayerTimes, currentRecord]);
 
+  const handleExtraPrayerUpdate = async (prayerId: string, value: any) => {
+    if (!user) return;
+
+    const dateStr = selectedDate;
+    const docRef = doc(db, "users", user.uid, "prayer_records", dateStr);
+
+    try {
+      let recordToUpdate = currentRecord;
+      if (dateStr !== format(new Date(), "yyyy-MM-dd")) {
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          recordToUpdate = snap.data() as PrayerRecord;
+        } else {
+          recordToUpdate = {
+            uid: user.uid,
+            date: dateStr,
+            fajr: "none",
+            dhuhr: "none",
+            asr: "none",
+            maghrib: "none",
+            isha: "none",
+            updatedAt: new Date(),
+          };
+        }
+      }
+
+      const updatedRecord = {
+        ...recordToUpdate,
+        [prayerId]: value,
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(docRef, updatedRecord, { merge: true });
+
+      // We should also recalculate the daily score if needed, but for now just update the record
+      // The daily score aggregation can be called here similarly to handleStatusUpdate
+      // --- AGGREGATE DAY SCORE ---
+      try {
+        // Fetch previous day's close for continuity
+        const prevDateStr = format(subDays(new Date(dateStr), 1), "yyyy-MM-dd");
+        const prevScoreSnap = await getDoc(doc(db, "users", user.uid, "daily_scores", prevDateStr));
+        const prevClose = prevScoreSnap.exists() ? prevScoreSnap.data().candle?.close : 50.00;
+
+        const aggregationInput = prepareAggregationInput(updatedRecord, gender || 'male');
+        const dayScore = aggregateDayScore(aggregationInput, prevClose);
+        
+        const dailyScoreRef = doc(db, "users", user.uid, "daily_scores", dateStr);
+        await setDoc(dailyScoreRef, {
+          date: dateStr,
+          ...dayScore,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+      } catch (aggError) {
+        console.error("Error aggregating day score:", aggError);
+      }
+      // --- END AGGREGATE ---
+
+      statsNeedsRefresh.current = true;
+    } catch (error) {
+      console.error("Error updating extra prayer:", error);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!user) return;
+    
+    setIsSavingProfile(true);
+    // Validate username
+    const lowerUsername = tempUsername.trim().toLowerCase();
+    let cleanUsername = lowerUsername;
+    if (cleanUsername && !cleanUsername.startsWith("@")) {
+      cleanUsername = "@" + cleanUsername;
+    }
+    
+    try {
+      const userRef = doc(db, "users", user.uid);
+      await setDoc(userRef, {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        username: cleanUsername,
+        username_lower: cleanUsername,
+        bio: tempBio,
+        gender: gender,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      
+      setUsername(cleanUsername);
+      setBio(tempBio);
+      setIsProfileEditing(false);
+      toast.success("Профиль сақталды!");
+    } catch (error) {
+      console.error("Error saving profile:", error);
+      toast.error("Профильді сақтау кезінде қате шықты.");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   const handleStatusUpdate = async () => {
     if (!user || !selectedPrayer || !tempStatus) return;
 
@@ -1016,19 +1392,132 @@ export default function App() {
         }
       }
 
-      await setDoc(
-        docRef,
-        {
-          ...recordToUpdate,
-          [selectedPrayer]: tempStatus,
-          contexts: {
-            ...(recordToUpdate?.contexts || {}),
-            [selectedPrayer]: tempContext,
-          },
-          updatedAt: serverTimestamp(),
+      // --- NP ENGINE LOGIC START ---
+      let finalNP = 0;
+      let breakdown = null;
+      
+      if (tempStatus !== "none") {
+        // 1. Determine location from context
+        let location: PrayerLocation = "unknown";
+        let congregation = false;
+        let aloneAtMosque = false;
+        
+        if (tempContext.includes("mosque")) {
+          location = "mosque";
+          if (tempContext.includes("alone")) aloneAtMosque = true;
+          else congregation = true;
+        } else if (tempContext.includes("home")) {
+          location = "home";
+          if (tempContext.includes("congregation")) congregation = true;
+        } else if (tempContext.includes("work")) {
+          location = "work_mosque";
+          if (tempContext.includes("congregation")) congregation = true;
+        } else if (tempContext.includes("travel")) {
+          location = "travel";
+        } else if (tempContext.includes("hospital")) {
+          location = "hospital";
+        }
+
+        // 2. Calculate Base NP
+        const baseNP = calculateBaseNP(tempStatus, location, congregation, aloneAtMosque);
+
+        // 3. Calculate Delay (if applicable)
+        let delayPercent = null;
+        let delayZone: any = null;
+        let windowMinutes = null;
+        
+        if (tempStatus === "delayed" || tempStatus === "prayed") {
+           // For now, we'll use a simplified delay calculation if we don't have exact times
+           // In a full implementation, we'd use the actual prayer times from `prayerTimes`
+           if (tempStatus === "delayed") {
+             delayPercent = 80; // Placeholder: assume 80% delayed if marked as delayed
+             delayZone = "delayed";
+             windowMinutes = 120; // Placeholder: 2 hour window
+           } else {
+             delayPercent = 10; // Placeholder: 10% into the window
+             delayZone = "on_time";
+             windowMinutes = 120;
+           }
+        }
+
+        // 4. Apply Modifiers
+        const khushuRating = 3; // Default to 3 (normal) for now. Future UI can set this.
+        const rawatibMultiplier = 1.0; // Default to 1.0. Future UI can set this based on sunnah checkboxes.
+        
+        const result = applyModifiers(
+          baseNP,
+          tempStatus,
+          delayZone,
+          delayPercent,
+          windowMinutes,
+          khushuRating,
+          rawatibMultiplier,
+          selectedPrayer as PrayerName,
+          gender === "female"
+        );
+        
+        finalNP = result.finalNP;
+        breakdown = result.breakdown;
+      }
+      // --- NP ENGINE LOGIC END ---
+
+      const updatedRecord = {
+        ...recordToUpdate,
+        [selectedPrayer]: tempStatus,
+        contexts: {
+          ...(recordToUpdate?.contexts || {}),
+          [selectedPrayer]: tempContext,
         },
-        { merge: true },
-      );
+        np_scores: {
+          ...(recordToUpdate?.np_scores || {}),
+          [selectedPrayer]: finalNP
+        },
+        np_breakdown: {
+          ...(recordToUpdate?.np_breakdown || {}),
+          [selectedPrayer]: breakdown
+        },
+        updatedAt: serverTimestamp(),
+      };
+
+      // Automatically set witr if Isha is prayed
+      if (selectedPrayer === 'isha') {
+        updatedRecord.witr = tempStatus === 'prayed' || tempStatus === 'congregation';
+      }
+
+      await setDoc(docRef, updatedRecord, { merge: true });
+
+      // --- AGGREGATE DAY SCORE ---
+      // We need to calculate the total day score and save it to daily_scores collection
+      try {
+        // Fetch previous day's close for continuity
+        const prevDateStr = format(subDays(new Date(dateStr), 1), "yyyy-MM-dd");
+        const prevScoreSnap = await getDoc(doc(db, "users", user.uid, "daily_scores", prevDateStr));
+        const prevClose = prevScoreSnap.exists() ? prevScoreSnap.data().candle?.close : 50.00;
+
+        const aggregationInput = prepareAggregationInput(updatedRecord, gender || 'male');
+        const dayScore = aggregateDayScore(aggregationInput, prevClose);
+        
+        // Save to daily_scores collection
+        const dailyScoreRef = doc(db, "users", user.uid, "daily_scores", dateStr);
+        await setDoc(dailyScoreRef, {
+          date: dateStr,
+          ...dayScore,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        // Update lastNI on user profile if this is today
+        if (dateStr === format(new Date(), "yyyy-MM-dd")) {
+          await setDoc(doc(db, "users", user.uid), {
+            lastNI: dayScore.candle.close,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        }
+
+      } catch (aggError) {
+        console.error("Error aggregating day score:", aggError);
+      }
+      // --- END AGGREGATE ---
+
       statsNeedsRefresh.current = true;
       setIsStatusDrawerOpen(false);
       setDrawerStep("status");
@@ -1039,6 +1528,44 @@ export default function App() {
     }
   };
 
+  // Username Validation logic
+  useEffect(() => {
+    if (!setupUsername) {
+      setUsernameError("");
+      return;
+    }
+
+    const validateUsername = async () => {
+      if (setupUsername.length < 5) {
+        setUsernameError("Ник кемінде 5 әріптен тұруы керек");
+        return;
+      }
+      if (!/^[a-zA-Z0-9_]+$/.test(setupUsername)) {
+        setUsernameError("Тек латын әріптері, сандар және _ (астыңғы сызық) рұқсат етілген");
+        return;
+      }
+
+      setIsCheckingUsername(true);
+      try {
+        const lowerUsername = setupUsername.toLowerCase();
+        const q = query(collection(db, "users"), where("username_lower", "==", `@${lowerUsername}`));
+        const snap = await getDocs(q);
+        if (!snap.empty && snap.docs[0].id !== user?.uid) {
+          setUsernameError("Бұл ник бос емес");
+        } else {
+          setUsernameError("");
+        }
+      } catch (error) {
+        console.error("Error checking username:", error);
+      } finally {
+        setIsCheckingUsername(false);
+      }
+    };
+
+    const timeoutId = setTimeout(validateUsername, 500);
+    return () => clearTimeout(timeoutId);
+  }, [setupUsername, user]);
+
   if (!isAuthReady) {
     return <LoadingScreen message={t("loading")} />;
   }
@@ -1046,6 +1573,45 @@ export default function App() {
   if (!user) {
     return <AuthScreen />;
   }
+
+  const handleTogglePrivate = async (checked: boolean) => {
+    if (!user) return;
+    setIsPrivate(checked);
+    try {
+      await setDoc(doc(db, "users", user.uid), {
+        isPrivate: checked,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } catch (error) {
+      console.error("Error updating privacy:", error);
+      setIsPrivate(!checked); // Revert on error
+      toast.error("Қате шықты");
+    }
+  };
+
+  const handleSaveSetupUsername = async () => {
+    if (!user || usernameError || setupUsername.length < 5 || isCheckingUsername) return;
+    
+    setIsSavingSetup(true);
+    try {
+      const lowerUsername = setupUsername.toLowerCase();
+      const formattedUsername = `@${lowerUsername}`;
+      await setDoc(doc(db, "users", user.uid), {
+        username: formattedUsername,
+        username_lower: formattedUsername,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      
+      setUsername(formattedUsername);
+      setIsUsernameModalOpen(false);
+      toast.success("Ник сәтті сақталды!");
+    } catch (error) {
+      console.error("Error saving username:", error);
+      toast.error("Қате шықты");
+    } finally {
+      setIsSavingSetup(false);
+    }
+  };
 
   const contexts = [
     { id: "home", icon: Home, label: t("ctx_home"), color: "text-emerald-500" },
@@ -1207,8 +1773,68 @@ export default function App() {
       "h-[100dvh] overflow-hidden font-sans text-foreground transition-colors duration-300 flex flex-col",
       activeTab === "home" && isDarkMode && isStarrySky ? "bg-transparent" : "bg-background"
     )}>
+      {/* Username Setup Modal */}
+      <Dialog open={isUsernameModalOpen} onOpenChange={(open) => {
+        // Prevent closing if username is not set
+        if (!username && !open) return;
+        setIsUsernameModalOpen(open);
+      }}>
+        <DialogContent className="sm:max-w-md rounded-3xl" showCloseButton={!!username}>
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-center">Қош келдіңіз!</DialogTitle>
+            <DialogDescription className="text-center">
+              Жобаны толық пайдалану үшін өзіңізге бірегей ник (username) ойлап табыңыз.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2 relative">
+              <div className="relative flex items-center">
+                <span className="absolute left-3 text-muted-foreground font-bold">@</span>
+                <Input
+                  value={setupUsername}
+                  onChange={(e) => setSetupUsername(e.target.value.toLowerCase())}
+                  placeholder="username"
+                  className={cn(
+                    "pl-8 h-12 rounded-xl text-lg",
+                    usernameError ? "border-rose-500 focus-visible:ring-rose-500" : 
+                    (setupUsername.length >= 5 && !isCheckingUsername ? "border-emerald-500 focus-visible:ring-emerald-500" : "")
+                  )}
+                  maxLength={20}
+                />
+                <div className="absolute right-3 flex items-center">
+                  {isCheckingUsername && <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />}
+                  {!isCheckingUsername && setupUsername.length >= 5 && !usernameError && (
+                    <Check className="w-5 h-5 text-emerald-500" />
+                  )}
+                  {!isCheckingUsername && usernameError && (
+                    <X className="w-5 h-5 text-rose-500" />
+                  )}
+                </div>
+              </div>
+              {usernameError ? (
+                <p className="text-sm text-rose-500 font-medium pl-1">{usernameError}</p>
+              ) : setupUsername.length >= 5 && !isCheckingUsername ? (
+                <p className="text-sm text-emerald-500 font-medium pl-1">Бұл ник бос!</p>
+              ) : (
+                <p className="text-xs text-muted-foreground pl-1">Кемінде 5 әріп немесе сан. Үтір, нүкте рұқсат етілмейді.</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="sm:justify-center">
+            <Button 
+              onClick={handleSaveSetupUsername} 
+              disabled={!!usernameError || setupUsername.length < 5 || isCheckingUsername || isSavingSetup}
+              className="w-full h-12 rounded-xl text-lg font-bold"
+            >
+              {isSavingSetup ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
+              Сақтау және Жалғастыру
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {activeTab === "home" && isDarkMode && isStarrySky && <NightSky />}
-      <main className="flex-1 flex flex-col max-w-md mx-auto w-full p-4 pt-6 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 flex flex-col max-w-full mx-auto w-full p-4 pt-6 overflow-y-auto custom-scrollbar border-x border-muted/10">
         {activeTab === "home" && (
           <div className="flex flex-col flex-1">
             <div className="space-y-2">
@@ -1330,7 +1956,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col justify-center px-[15%] pt-4 pb-32">
+            <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full pt-4 pb-32">
               <LayoutGroup>
                 <div className="bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl overflow-hidden shadow-sm">
                   <div className="flex flex-col">
@@ -1491,13 +2117,195 @@ export default function App() {
                   </div>
                 </div>
               </LayoutGroup>
+
+              {/* Қосымша намаздар (Extra Prayers) - Bento Style */}
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                {/* Тахаджуд */}
+                <motion.div 
+                  whileTap={{ scale: 0.98 }}
+                  className={cn(
+                    "relative p-4 rounded-3xl border transition-all duration-300 overflow-hidden group",
+                    currentRecord?.tahajjud 
+                      ? "bg-indigo-50/50 border-indigo-100 dark:bg-indigo-500/10 dark:border-indigo-500/20" 
+                      : "bg-white dark:bg-zinc-900/40 border-zinc-100 dark:border-zinc-800/50"
+                  )}
+                >
+                  <div className="flex flex-col gap-3 relative z-10">
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <div className={cn(
+                          "w-10 h-10 rounded-2xl flex items-center justify-center transition-colors",
+                          currentRecord?.tahajjud ? "bg-indigo-500 text-white" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
+                        )}>
+                          <Moon className="w-5 h-5" />
+                        </div>
+                        {currentRecord?.tahajjud && (
+                          <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-indigo-500 border-2 border-background flex items-center justify-center">
+                            <Check className="w-2.5 h-2.5 text-white" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-bold text-sm">Тахаджуд</h4>
+                        <p className="text-[10px] text-muted-foreground">Түнгі құлшылық</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const isNowActive = !currentRecord?.tahajjud;
+                          handleExtraPrayerUpdate('tahajjud', isNowActive);
+                          if (isNowActive && !currentRecord?.tahajjudRakats) {
+                            handleExtraPrayerUpdate('tahajjudRakats', 2);
+                          }
+                        }}
+                        className={cn(
+                          "w-8 h-8 rounded-full flex items-center justify-center transition-all",
+                          currentRecord?.tahajjud ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/30" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
+                        )}
+                      >
+                        <Plus className={cn("w-4 h-4 transition-transform", currentRecord?.tahajjud && "rotate-45")} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <div className="flex items-center bg-background/50 backdrop-blur-sm rounded-xl border p-1">
+                        <button 
+                          className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExtraPrayerUpdate('tahajjudRakats', Math.max(2, (currentRecord?.tahajjudRakats || 2) - 2));
+                          }}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span className="text-xs font-bold w-6 text-center">{currentRecord?.tahajjudRakats || 2}</span>
+                        <button 
+                          className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExtraPrayerUpdate('tahajjudRakats', Math.min(12, (currentRecord?.tahajjudRakats || 2) + 2));
+                          }}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  {currentRecord?.tahajjud && (
+                    <motion.div 
+                      layoutId="tahajjudGlow"
+                      className="absolute -right-4 -bottom-4 w-24 h-24 bg-indigo-500/10 blur-3xl rounded-full"
+                    />
+                  )}
+                </motion.div>
+
+                {/* Духа */}
+                <motion.div 
+                  whileTap={{ scale: 0.98 }}
+                  className={cn(
+                    "relative p-4 rounded-3xl border transition-all duration-300 overflow-hidden group",
+                    currentRecord?.duha 
+                      ? "bg-amber-50/50 border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/20" 
+                      : "bg-white dark:bg-zinc-900/40 border-zinc-100 dark:border-zinc-800/50"
+                  )}
+                >
+                  <div className="flex flex-col gap-3 relative z-10">
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <div className={cn(
+                          "w-10 h-10 rounded-2xl flex items-center justify-center transition-colors",
+                          currentRecord?.duha ? "bg-amber-500 text-white" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
+                        )}>
+                          <Sun className="w-5 h-5" />
+                        </div>
+                        {currentRecord?.duha && (
+                          <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 border-2 border-background flex items-center justify-center">
+                            <Check className="w-2.5 h-2.5 text-white" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-bold text-sm">Духа</h4>
+                        <p className="text-[10px] text-muted-foreground">Сәске намазы</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const isNowActive = !currentRecord?.duha;
+                          handleExtraPrayerUpdate('duha', isNowActive);
+                          if (isNowActive && !currentRecord?.duhaRakats) {
+                            handleExtraPrayerUpdate('duhaRakats', 2);
+                          }
+                        }}
+                        className={cn(
+                          "w-8 h-8 rounded-full flex items-center justify-center transition-all",
+                          currentRecord?.duha ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
+                        )}
+                      >
+                        <Plus className={cn("w-4 h-4 transition-transform", currentRecord?.duha && "rotate-45")} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <div className="flex items-center bg-background/50 backdrop-blur-sm rounded-xl border p-1">
+                        <button 
+                          className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExtraPrayerUpdate('duhaRakats', Math.max(2, (currentRecord?.duhaRakats || 2) - 2));
+                          }}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span className="text-xs font-bold w-6 text-center">{currentRecord?.duhaRakats || 2}</span>
+                        <button 
+                          className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExtraPrayerUpdate('duhaRakats', Math.min(12, (currentRecord?.duhaRakats || 2) + 2));
+                          }}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  {currentRecord?.duha && (
+                    <motion.div 
+                      layoutId="duhaGlow"
+                      className="absolute -right-4 -bottom-4 w-24 h-24 bg-amber-500/10 blur-3xl rounded-full"
+                    />
+                  )}
+                </motion.div>
+              </div>
+
+              {/* Жұма (Тек жұма күні көрінеді) */}
+              {new Date(selectedDate).getDay() === 5 && gender === "male" && (
+                <div className="mt-4 bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl overflow-hidden shadow-sm p-4">
+                  <div className="flex items-center justify-between px-2">
+                    <div className="flex items-center gap-3">
+                      <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center", currentRecord?.juma ? "bg-emerald-500 text-white" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800")}>
+                        <Users2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm">Жұма намазы</p>
+                        <p className="text-[10px] text-muted-foreground">Мешітке бару</p>
+                      </div>
+                    </div>
+                    <Button
+                      variant={currentRecord?.juma ? "default" : "outline"}
+                      size="sm"
+                      className={cn("h-8 px-4 rounded-full font-bold text-[10px] uppercase tracking-wider", currentRecord?.juma && "bg-emerald-500 hover:bg-emerald-600")}
+                      onClick={() => handleExtraPrayerUpdate('juma', !currentRecord?.juma)}
+                    >
+                      {currentRecord?.juma ? "Қатыстым" : "Белгілеу"}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {activeTab === "calendar" && (
           <div 
-            className="space-y-6"
+            className="space-y-6 max-w-7xl mx-auto"
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
@@ -1531,7 +2339,7 @@ export default function App() {
             </div>
 
             {calendarView === "weekly" ? (
-              <div className="bg-card rounded-2xl border border-muted/40 shadow-sm p-4 flex flex-col items-center w-full max-w-md mx-auto">
+              <div className="bg-card rounded-2xl border border-muted/40 shadow-sm p-4 flex flex-col items-center w-full max-w-4xl mx-auto">
                 <div className="flex justify-between items-center w-full mb-4 px-2">
                   <Button 
                     variant="outline" 
@@ -1790,7 +2598,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="bg-card rounded-2xl border border-muted/40 shadow-sm p-4 flex flex-col items-center w-full">
+              <div className="bg-card rounded-2xl border border-muted/40 shadow-sm p-4 flex flex-col items-center w-full max-w-4xl mx-auto">
                 <div className="flex justify-between items-center w-full mb-4 px-2">
                   <Button 
                     variant="outline" 
@@ -1833,7 +2641,7 @@ export default function App() {
                         const isCurrentMonth = isSameMonth(day, currentMonth);
                         const isFuture = day > new Date();
                         
-                        const { score, colorClass, sizeClass } = getDynamicDayScore(dateStr);
+                        const { score, colorClass, sizePx } = getDynamicDayScore(dateStr);
 
                         return (
                           <div key={i} className="aspect-square border-b border-r border-muted/30 flex items-center justify-center relative">
@@ -1857,11 +2665,13 @@ export default function App() {
                               )}
                             >
                               {!isFuture && score >= 0 && (
-                                <div className={cn(
-                                  "rounded-full transition-all duration-300", 
-                                  sizeClass,
-                                  colorClass
-                                )} />
+                                <div 
+                                  className={cn(
+                                    "rounded-full transition-all duration-300", 
+                                    colorClass
+                                  )} 
+                                  style={{ width: `${sizePx}px`, height: `${sizePx}px` }}
+                                />
                               )}
                             </button>
                           </div>
@@ -1878,7 +2688,7 @@ export default function App() {
         )}
 
         {activeTab === "statistics" && (
-          <div className="space-y-6">
+          <div className="space-y-6 max-w-5xl mx-auto w-full">
             <div className="flex flex-col space-y-4">
               <div className="flex items-center justify-between">
                 <h1 className="text-3xl font-bold tracking-tight text-foreground">
@@ -2143,212 +2953,346 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === "settings" && (
-          <div className="space-y-6 pb-20">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">
-                {t("settings")}
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                {t("preferences_desc")}
-              </p>
-            </div>
+        {activeTab === "analytics" && (
+          <AnalyticsScreen currentStreak={currentStreak} />
+        )}
 
-            <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
-              <div className="flex items-center gap-4 p-4">
-                <Avatar className="w-12 h-12">
-                  <AvatarImage
-                    src={user.photoURL || ""}
-                    alt="Profile"
-                    referrerPolicy="no-referrer"
-                  />
-                  <AvatarFallback className="bg-slate-100 dark:bg-slate-800">
-                    <User className="w-6 h-6 text-slate-400 dark:text-slate-500" />
-                  </AvatarFallback>
+        {activeTab === "community" && (
+          <CommunityScreen />
+        )}
+
+        {activeTab === "settings" && (
+          <div className="space-y-8 pb-28 px-4 pt-4 max-w-3xl mx-auto w-full">
+            {/* Profile Header */}
+            <div className="flex flex-col items-center text-center space-y-4 py-6 bg-card border rounded-[2.5rem] shadow-sm relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-b from-primary/5 to-transparent" />
+              <div className="relative">
+                <Avatar className="w-24 h-24 border-4 border-background shadow-2xl">
+                  <AvatarImage src={user?.photoURL || ""} referrerPolicy="no-referrer" />
+                  <AvatarFallback className="bg-muted"><User className="w-12 h-12 text-muted-foreground" /></AvatarFallback>
                 </Avatar>
-                <div className="flex-1 space-y-1">
-                  <p className="text-sm font-medium leading-none">
-                    {user.displayName || "User"}
-                  </p>
-                  <p className="text-sm text-muted-foreground">{user.email}</p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setIsLogoutDialogOpen(true)}
-                  className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50"
+                <Button 
+                  size="icon" 
+                  variant="secondary" 
+                  className="absolute bottom-0 right-0 rounded-full w-9 h-9 shadow-xl border-2 border-background"
+                  onClick={() => setIsProfileEditing(true)}
                 >
-                  <LogOut className="w-5 h-5" />
+                  <Settings2 className="w-4 h-4" />
                 </Button>
               </div>
+              <div className="space-y-1 relative z-10">
+                <h2 className="text-2xl font-bold tracking-tight">{user?.displayName || "Пайдаланушы"}</h2>
+                <p className="text-sm text-indigo-500 font-mono font-bold">{username || "@username"}</p>
+                {bio && <p className="text-sm text-muted-foreground max-w-[250px] mx-auto italic mt-2">"{bio}"</p>}
+              </div>
             </div>
 
-            <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden flex flex-col">
-              {user?.email === "ilyasuly.isakhan@gmail.com" && (
-                <div className="flex items-center justify-between p-4 border-b last:border-0">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                      <User className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-sm font-medium leading-none">
-                        {t("gender", { defaultValue: "Жынысы" })}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {t("gender_desc", { defaultValue: "Жынысты таңдау (Тест)" })}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex bg-muted p-1 rounded-lg">
-                    <Button 
-                      variant={gender === "male" ? "default" : "ghost"} 
-                      size="sm" 
-                      className="h-7 text-[10px] px-2"
-                      onClick={() => setGender("male")}
+            {/* Settings Sections */}
+            <div className="space-y-8">
+              <SettingsSection title="Профиль және қатынас">
+                <SettingsItem 
+                  icon={<User className="w-5 h-5 text-blue-500" />}
+                  bgColor="bg-blue-500/10"
+                  title="Профильді өңдеу"
+                  description="Логин мен бионы өзгерту"
+                  onClick={() => setIsProfileEditing(true)}
+                />
+                <SettingsItem 
+                  icon={<Share2 className="w-5 h-5 text-emerald-500" />}
+                  bgColor="bg-emerald-500/10"
+                  title="Достармен бөлісу"
+                  description="Қосымшаны басқаларға ұсыну"
+                  onClick={() => setIsShareScreenOpen(true)}
+                />
+              </SettingsSection>
+
+              <SettingsSection title="Қолданба баптаулары">
+                <SettingsItem 
+                  icon={<Globe className="w-5 h-5 text-sky-500" />}
+                  bgColor="bg-sky-500/10"
+                  title="Тіл / Язык"
+                  description={i18n.language === "kk" ? "Қазақша" : "Русский"}
+                  rightElement={
+                    <Select 
+                      value={i18n.language} 
+                      onValueChange={(val) => i18n.changeLanguage(val)}
                     >
-                      {t("male", { defaultValue: "Ер" })}
-                    </Button>
-                    <Button 
-                      variant={gender === "female" ? "default" : "ghost"} 
-                      size="sm" 
-                      className="h-7 text-[10px] px-2"
-                      onClick={() => setGender("female")}
+                      <SelectTrigger className="w-[100px] h-8 text-[10px] border-none bg-muted/50 rounded-lg">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="kk">Қазақша</SelectItem>
+                        <SelectItem value="ru">Русский</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  }
+                />
+                <SettingsItem 
+                  icon={<Trophy className="w-5 h-5 text-yellow-500" />}
+                  bgColor="bg-yellow-500/10"
+                  title="Рейтинг"
+                  description="Пайдаланушылар көшбасшылар тақтасы"
+                  onClick={() => setActiveTab("leaderboard")}
+                />
+                <SettingsItem 
+                  icon={<Calculator className="w-5 h-5 text-indigo-500" />}
+                  bgColor="bg-indigo-500/10"
+                  title="Есептеу әдісі"
+                  description={calculationMethod === 2 ? "Қазақстан (ҚМДБ)" : "Басқа әдіс"}
+                  rightElement={
+                    <Select 
+                      value={calculationMethod.toString()} 
+                      onValueChange={(val) => {
+                        setCalculationMethod(parseInt(val));
+                        setPrayerTimes(null, "");
+                      }}
                     >
-                      {t("female", { defaultValue: "Әйел" })}
-                    </Button>
-                  </div>
-                </div>
-              )}
+                      <SelectTrigger className="w-[100px] h-8 text-[10px] border-none bg-muted/50 rounded-lg">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="2">ҚМДБ</SelectItem>
+                        <SelectItem value="14">САМР</SelectItem>
+                        <SelectItem value="13">Diyanet</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  }
+                />
+                <SettingsItem 
+                  icon={isDarkMode ? <Moon className="w-5 h-5 text-purple-500" /> : <Sun className="w-5 h-5 text-amber-500" />}
+                  bgColor={isDarkMode ? "bg-purple-500/10" : "bg-amber-500/10"}
+                  title="Түнгі режим"
+                  description="Көзге жайлы интерфейс"
+                  rightElement={
+                    <Switch checked={isDarkMode} onCheckedChange={toggleDarkMode} />
+                  }
+                />
+                {isDarkMode && (
+                  <SettingsItem 
+                    icon={<Sparkles className="w-5 h-5 text-indigo-500" />}
+                    bgColor="bg-indigo-500/10"
+                    title="Жұлдызды аспан"
+                    description="Басты беттегі анимация"
+                    rightElement={
+                      <Switch checked={isStarrySky} onCheckedChange={toggleStarrySky} />
+                    }
+                  />
+                )}
+                <SettingsItem 
+                  icon={<Bell className="w-5 h-5 text-rose-500" />}
+                  bgColor="bg-rose-500/10"
+                  title="Хабарламалар"
+                  description="Намаз уақыттарын ескерту"
+                  rightElement={<Switch checked={true} />}
+                />
+              </SettingsSection>
 
-              <div className="flex items-center justify-between p-4 border-b last:border-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                    <Calculator className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <SettingsSection title="Аналитика баптаулары">
+                <SettingsItem 
+                  icon={<LineChart className="w-5 h-5 text-indigo-500" />}
+                  bgColor="bg-indigo-500/10"
+                  title="График түрі"
+                  description="Аналитика графигінің стилі"
+                  rightElement={
+                    <Select 
+                      value={chartType} 
+                      onValueChange={(val: any) => setChartType(val)}
+                    >
+                      <SelectTrigger className="w-[120px] h-8 text-[10px] border-none bg-muted/50 rounded-lg">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="baseline">Baseline</SelectItem>
+                        <SelectItem value="candlestick">Шамдар (Кызыл/Жасыл)</SelectItem>
+                        <SelectItem value="realtime">Realtime</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  }
+                />
+                <SettingsItem 
+                  icon={<Activity className="w-5 h-5 text-emerald-500" />}
+                  bgColor="bg-emerald-500/10"
+                  title="Маркерлер"
+                  description="Керемет/Қаза белгілері"
+                  rightElement={
+                    <Switch checked={showChartMarkers} onCheckedChange={setShowChartMarkers} />
+                  }
+                />
+                <SettingsItem 
+                  icon={<Target className="w-5 h-5 text-teal-500" />}
+                  bgColor="bg-teal-500/10"
+                  title="Мақсатты сызық"
+                  description="80 ұпай деңгейі"
+                  rightElement={
+                    <Switch checked={showChartPriceLine} onCheckedChange={setShowChartPriceLine} />
+                  }
+                />
+                <SettingsItem 
+                  icon={<Users className="w-5 h-5 text-purple-500" />}
+                  bgColor="bg-purple-500/10"
+                  title="Қауымдастық"
+                  description="Орташа көрсеткіш"
+                  rightElement={
+                    <Switch checked={showChartCommunity} onCheckedChange={setShowChartCommunity} />
+                  }
+                />
+                <SettingsItem 
+                  icon={<TrendingUp className="w-5 h-5 text-blue-500" />}
+                  bgColor="bg-blue-500/10"
+                  title="Жылжымалы орташа"
+                  description="7 күндік тренд (MA)"
+                  rightElement={
+                    <Switch checked={showChartMA} onCheckedChange={setShowChartMA} />
+                  }
+                />
+              </SettingsSection>
+
+              <SettingsSection title="Құпиялылық және Қауіпсіздік">
+                <SettingsItem 
+                  icon={<Lock className="w-5 h-5 text-rose-500" />}
+                  bgColor="bg-rose-500/10"
+                  title="Профиль жабықтығы"
+                  description="Тек достар ғана көре алады"
+                  rightElement={<Switch checked={isPrivate} onCheckedChange={handleTogglePrivate} />}
+                />
+                <SettingsItem 
+                  icon={<UserX className="w-5 h-5 text-slate-500" />}
+                  bgColor="bg-slate-500/10"
+                  title="Блокталған қолданушылар"
+                  description="Блокталғандар тізімі"
+                  onClick={() => {}}
+                />
+              </SettingsSection>
+
+              <SettingsSection title="Деректерді басқару">
+                <SettingsItem 
+                  icon={<Database className="w-5 h-5 text-orange-500" />}
+                  bgColor="bg-orange-500/10"
+                  title="Тест деректері"
+                  description="30 күндік жасанды деректер"
+                  onClick={generateMockData}
+                  disabled={isGeneratingMock}
+                  rightElement={isGeneratingMock ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                />
+                <SettingsItem 
+                  icon={<LogOut className="w-5 h-5 text-slate-500" />}
+                  bgColor="bg-slate-500/10"
+                  title="Шығу"
+                  description="Аккаунттан шығу"
+                  onClick={() => setIsLogoutDialogOpen(true)}
+                  showChevron={false}
+                />
+              </SettingsSection>
+            </div>
+
+            {/* Profile Edit Modal */}
+            <Dialog open={isProfileEditing} onOpenChange={setIsProfileEditing}>
+              <DialogContent className="sm:max-w-[425px] rounded-[2rem] p-6">
+                <DialogHeader>
+                  <DialogTitle className="text-xl font-bold">Профильді өңдеу</DialogTitle>
+                  <DialogDescription className="text-xs">
+                    Логин мен бионы осы жерде өзгерте аласыз.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-5 py-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground ml-1">Логин (@username)</label>
+                    <Input 
+                      value={tempUsername}
+                      onChange={(e) => setTempUsername(e.target.value)}
+                      placeholder="@username"
+                      className="rounded-2xl h-12 bg-muted/30 border-none focus-visible:ring-primary/20"
+                    />
                   </div>
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-medium leading-none">
-                      {t("calculation_method")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {t("calc_desc")}
-                    </p>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground ml-1">Өзіңіз туралы</label>
+                    <Textarea 
+                      value={tempBio}
+                      onChange={(e) => setTempBio(e.target.value)}
+                      placeholder="Био..."
+                      className="rounded-2xl min-h-[120px] resize-none bg-muted/30 border-none focus-visible:ring-primary/20 p-4"
+                    />
                   </div>
                 </div>
-                <Select 
-                  value={calculationMethod.toString()} 
-                  onValueChange={(val) => {
-                    const method = parseInt(val);
-                    setCalculationMethod(method);
-                    setPrayerTimes(null, ""); // Clear to force refresh
-                  }}
-                >
-                  <SelectTrigger className="w-[140px] h-8 text-[11px]">
-                    <SelectValue placeholder="Method" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="2">Қазақстан (ҚМДБ)</SelectItem>
-                    <SelectItem value="14">Ресей (САМР)</SelectItem>
-                    <SelectItem value="13">Түркия (Diyanet)</SelectItem>
-                    <SelectItem value="3">Muslim World League</SelectItem>
-                    <SelectItem value="45">ISNA (North America)</SelectItem>
-                    <SelectItem value="1">Karachi</SelectItem>
-                    <SelectItem value="4">Makkah</SelectItem>
-                    <SelectItem value="5">Egypt</SelectItem>
-                  </SelectContent>
-                </Select>
+                <DialogFooter className="flex-row gap-3">
+                  <Button variant="ghost" className="flex-1 rounded-2xl h-12 font-bold" onClick={() => setIsProfileEditing(false)} disabled={isSavingProfile}>
+                    Бас тарту
+                  </Button>
+                  <Button className="flex-1 rounded-2xl h-12 font-bold shadow-lg shadow-primary/20" onClick={handleSaveProfile} disabled={isSavingProfile}>
+                    {isSavingProfile ? <Loader2 className="w-5 h-5 animate-spin" /> : "Сақтау"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        )}
+
+        {activeTab === "leaderboard" && (
+          <div className="space-y-6 pb-24 px-4 pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">Рейтинг</h1>
+                <p className="text-xs text-muted-foreground mt-0.5">Ең үздік құлшылық иелері</p>
               </div>
+              <Button variant="ghost" size="icon" className="rounded-full" onClick={fetchLeaderboard} disabled={isLoadingLeaderboard}>
+                <RefreshCw className={cn("w-5 h-5", isLoadingLeaderboard && "animate-spin")} />
+              </Button>
+            </div>
 
-              <div className="flex items-center justify-between p-4 border-b last:border-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                    <Bell className="w-4 h-4 text-green-600 dark:text-green-400" />
+            <div className="space-y-3">
+              {isLoadingLeaderboard ? (
+                Array(5).fill(0).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 p-4 rounded-3xl border bg-card animate-pulse">
+                    <div className="w-6 h-6 rounded-full bg-muted" />
+                    <div className="w-10 h-10 rounded-full bg-muted" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 w-24 bg-muted rounded" />
+                      <div className="h-3 w-16 bg-muted rounded" />
+                    </div>
+                    <div className="h-6 w-12 bg-muted rounded" />
                   </div>
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-medium leading-none">
-                      {t("notifications")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {t("notif_desc")}
-                    </p>
-                  </div>
-                </div>
-                <Switch checked={true} />
-              </div>
-
-              <div className="flex items-center justify-between p-4 border-b last:border-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                    {isDarkMode ? (
-                      <Moon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    ) : (
-                      <Sun className="w-4 h-4 text-orange-500 dark:text-orange-400" />
+                ))
+              ) : leaderboardUsers.length > 0 ? (
+                leaderboardUsers.map((u, i) => (
+                  <motion.div 
+                    key={u.uid}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className={cn(
+                      "flex items-center gap-4 p-4 rounded-3xl border bg-card transition-all",
+                      u.uid === user?.uid && "border-primary ring-2 ring-primary/10 bg-primary/5"
                     )}
-                  </div>
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-medium leading-none">
-                      {t("dark_mode")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {t("dark_mode_desc")}
-                    </p>
-                  </div>
+                  >
+                    <div className={cn(
+                      "w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0",
+                      i === 0 ? "bg-amber-100 text-amber-600" : 
+                      i === 1 ? "bg-slate-100 text-slate-600" :
+                      i === 2 ? "bg-orange-100 text-orange-600" : "text-muted-foreground"
+                    )}>
+                      {i + 1}
+                    </div>
+                    <Avatar className="w-10 h-10 border-2 border-background shadow-sm">
+                      <AvatarImage src={u.photoURL} />
+                      <AvatarFallback><User className="w-5 h-5" /></AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold truncate">{u.displayName || "User"}</p>
+                      <p className="text-[10px] text-indigo-500 font-mono font-bold">{u.username || "@anonymous"}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                        {u.lastNI?.toFixed(2) || "0.00"}
+                      </p>
+                      <p className="text-[9px] text-muted-foreground uppercase font-bold">NI</p>
+                    </div>
+                  </motion.div>
+                ))
+              ) : (
+                <div className="text-center py-20 text-muted-foreground">
+                  Рейтинг әлі бос
                 </div>
-                <Switch checked={isDarkMode} onCheckedChange={toggleDarkMode} />
-              </div>
-
-              {isDarkMode && (
-                <motion.div 
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="flex items-center justify-between p-4 border-b last:border-0 bg-indigo-50/30 dark:bg-indigo-900/10"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
-                      <Stars className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-sm font-medium leading-none">
-                        {t("starry_sky")}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {t("starry_sky_desc")}
-                      </p>
-                    </div>
-                  </div>
-                  <Switch checked={isStarrySky} onCheckedChange={toggleStarrySky} />
-                </motion.div>
               )}
-
-              <div className="flex items-center justify-between p-4 border-b last:border-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                    <MapPin className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  </div>
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-medium leading-none">
-                      {t("language")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {t("lang_desc")}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex bg-muted p-1 rounded-lg">
-                  <button 
-                    className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-all", i18n.language === 'kk' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground")} 
-                    onClick={() => i18n.changeLanguage('kk')}
-                  >
-                    Қаз
-                  </button>
-                  <button 
-                    className={cn("px-3 py-1.5 text-xs font-medium rounded-md transition-all", i18n.language === 'ru' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground")} 
-                    onClick={() => i18n.changeLanguage('ru')}
-                  >
-                    Рус
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
         )}

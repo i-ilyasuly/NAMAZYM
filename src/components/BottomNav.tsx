@@ -1,12 +1,12 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { BarChart2, Settings, Calendar } from 'lucide-react';
+import { BarChart2, Settings, Calendar, Activity, Users } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { AppLogo } from './AppLogo';
 
 interface BottomNavProps {
-  activeTab: 'home' | 'calendar' | 'statistics' | 'settings';
-  onChange: (tab: 'home' | 'calendar' | 'statistics' | 'settings') => void;
+  activeTab: 'home' | 'calendar' | 'statistics' | 'settings' | 'analytics' | 'leaderboard' | 'community';
+  onChange: (tab: 'home' | 'calendar' | 'statistics' | 'settings' | 'analytics' | 'leaderboard' | 'community') => void;
 }
 
 export function BottomNav({ activeTab, onChange }: BottomNavProps) {
@@ -15,6 +15,8 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
   const tabs = [
     { id: 'home', icon: null, label: t('home') },
     { id: 'calendar', icon: Calendar, label: t('calendar') },
+    { id: 'analytics', icon: Activity, label: 'NI' },
+    { id: 'community', icon: Users, label: 'Достар' },
     { id: 'statistics', icon: BarChart2, label: t('statistics') },
     { id: 'settings', icon: Settings, label: t('settings') },
   ] as const;
@@ -29,7 +31,7 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
             key={tab.id}
             onClick={() => onChange(tab.id as any)}
             className={cn(
-              "flex flex-col items-center p-2 min-w-[72px] transition-colors",
+              "flex flex-col items-center p-2 min-w-[64px] transition-colors",
               isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
