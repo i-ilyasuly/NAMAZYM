@@ -376,10 +376,10 @@ function AppContent() {
         clearTimeout(timer2);
         clearTimeout(timer3);
       };
-    } else if (activeTab !== "home") {
+    } else {
       isFirstHomeRender.current = true;
     }
-  }, [activeTab, selectedDate, isAuthReady, isCheckingGender]);
+  }, [activeTab, selectedDate]);
 
   const [calendarWeekStart, setCalendarWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [calendarView, setCalendarView] = useState<"weekly" | "monthly">("weekly");
