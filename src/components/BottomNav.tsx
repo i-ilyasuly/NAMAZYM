@@ -14,7 +14,6 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
 
   const tabs = [
     { id: 'home', icon: null, label: t('home') },
-    { id: 'calendar', icon: Calendar, label: t('calendar') },
     { id: 'analytics', icon: Activity, label: 'NI' },
     { id: 'community', icon: Users, label: 'Достар' },
     { id: 'statistics', icon: BarChart2, label: t('statistics') },
@@ -31,16 +30,18 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
             key={tab.id}
             onClick={() => onChange(tab.id as any)}
             className={cn(
-              "flex flex-col items-center p-2 min-w-[64px] transition-colors",
+              "flex flex-col items-center justify-center p-2 min-w-[64px] transition-colors",
               isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
             {tab.id === 'home' ? (
-              <AppLogo size={24} withBackground={false} className={cn("mb-1", !isActive && "opacity-50")} />
+              <AppLogo size={36} withBackground={false} className={cn("", !isActive && "opacity-50")} />
             ) : (
-              Icon && <Icon className={cn("w-6 h-6 mb-1", isActive && "stroke-[2.5px]")} />
+              <>
+                {Icon && <Icon className={cn("w-6 h-6 mb-1", isActive && "stroke-[2.5px]")} />}
+                <span className="text-[10px] font-medium">{tab.label}</span>
+              </>
             )}
-            <span className="text-[10px] font-medium">{tab.label}</span>
           </button>
         );
       })}

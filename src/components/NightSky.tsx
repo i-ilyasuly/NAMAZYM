@@ -58,27 +58,30 @@ const NightSky: React.FC = () => {
 
     const initStars = () => {
       stars.length = 0;
-      const starCount = Math.floor((width * height) / 3000);
+      const starCount = Math.floor((width * height) / 2500); // Increased density
 
-      // Constellation: Jeti Qaraqshy (Big Dipper) - More accurate relative positions
+      // Use a larger radius for the initial star field to accommodate rotation without gaps
+      const margin = Math.max(width, height) * 0.5;
+      
+      // Constellation: Jeti Qaraqshy (Big Dipper)
       const jetiQaraqshy = [
-        { x: 0.15, y: 0.45, size: 2.2 }, // Dubhe
-        { x: 0.16, y: 0.52, size: 2.0 }, // Merak
-        { x: 0.25, y: 0.54, size: 1.9 }, // Phecda
-        { x: 0.26, y: 0.47, size: 1.8 }, // Megrez
-        { x: 0.35, y: 0.44, size: 2.0 }, // Alioth
-        { x: 0.42, y: 0.40, size: 1.9 }, // Mizar
-        { x: 0.48, y: 0.42, size: 1.8 }  // Alkaid
+        { x: 0.15, y: 0.45, size: 2.2 },
+        { x: 0.16, y: 0.52, size: 2.0 },
+        { x: 0.25, y: 0.54, size: 1.9 },
+        { x: 0.26, y: 0.47, size: 1.8 },
+        { x: 0.35, y: 0.44, size: 2.0 },
+        { x: 0.42, y: 0.40, size: 1.9 },
+        { x: 0.48, y: 0.42, size: 1.8 }
       ];
 
-      // Constellation: Temirqazyq (Polaris)
+      // Constellation: Temirqazyq (Polaris) - The anchor point
       const temirqazyq = [{ x: 0.5, y: 0.15, size: 2.8 }];
 
       const starColors = [
-        'rgba(255, 255, 255, ', // White
-        'rgba(230, 240, 255, ', // Blue-ish
-        'rgba(255, 250, 230, ', // Yellow-ish
-        'rgba(255, 240, 240, ', // Red-ish
+        'rgba(255, 255, 255, ',
+        'rgba(230, 240, 255, ',
+        'rgba(255, 250, 230, ',
+        'rgba(255, 240, 240, ',
       ];
 
       // Add constellation stars
@@ -106,11 +109,12 @@ const NightSky: React.FC = () => {
         });
       });
 
-      // Add random stars
+      // Add random stars in an expanded circular field around the pole
       for (let i = 0; i < starCount; i++) {
+        // Generate within a much larger bounds to ensure coverage during rotation
         stars.push({
-          x: Math.random() * width,
-          y: Math.random() * height,
+          x: (Math.random() * (width + margin * 2)) - margin,
+          y: (Math.random() * (height + margin * 2)) - margin,
           size: Math.random() * 1.0 + 0.2,
           phase: Math.random() * Math.PI * 2,
           twinkleSpeed: 0.005 + Math.random() * 0.02,
@@ -186,9 +190,10 @@ const NightSky: React.FC = () => {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
       const seed = 123; // Fixed seed for craters
       for (let i = 0; i < 15; i++) {
+        const pseudoRand = Math.abs(Math.sin(seed + i * 42.5));
         const cx = x + (Math.sin(i * 13 + seed) * radius * 0.7);
         const cy = y + (Math.cos(i * 17 + seed) * radius * 0.7);
-        const cr = Math.random() * (radius * 0.2) + 2;
+        const cr = pseudoRand * (radius * 0.2) + 2;
         ctx.beginPath();
         ctx.arc(cx, cy, cr, 0, Math.PI * 2);
         ctx.fill();
@@ -215,14 +220,34 @@ const NightSky: React.FC = () => {
       ctx.fillStyle = galacticGrad;
       ctx.fillRect(0, 0, width, height);
 
-      // Realistic slow movement (Earth rotation simulation)
-      const moveSpeed = 0.00005; // Even slower for realism
-      const moveX = time * moveSpeed;
+      // Celestial rotation config
+      const rotationSpeed = 0.00001; // Extremely slow for a realistic feel
+      const angle = time * rotationSpeed;
+      
+      // Center of rotation (Temirqazyq / Polaris)
+      const poleX = width * 0.5;
+      const poleY = height * 0.15;
 
-      // Draw stars
+      // Draw stars with rotational math
       stars.forEach((star) => {
-        let x = (star.x + moveX) % width;
-        let y = star.y;
+        // Position relative to the pole
+        const relX = star.x - poleX;
+        const relY = star.y - poleY;
+
+        // Apply rotation matrix
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        
+        const rotatedX = relX * cosA - relY * sinA + poleX;
+        const rotatedY = relX * sinA + relY * cosA + poleY;
+
+        // Wrap logic for stars if they go too far out of bounds 
+        // (though with rotation we usually just keep them in a larger field)
+        const x = rotatedX;
+        const y = rotatedY;
+
+        // Only draw if within reasonable bounds (plus some padding for glows)
+        if (x < -100 || x > width + 100 || y < -100 || y > height + 100) return;
 
         const twinkle = (
           Math.sin(time * star.twinkleSpeed + star.phase) * 0.5 +
@@ -247,11 +272,6 @@ const NightSky: React.FC = () => {
           ctx.fill();
         }
       });
-
-      // Draw Moon (moves with stars)
-      const moonX = (width * 0.75 + moveX) % width;
-      const moonY = height * 0.2;
-      drawMoon(ctx, moonX, moonY, 35, moonPhase);
 
       // Draw shooting stars
       for (let i = shootingStars.length - 1; i >= 0; i--) {

@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
+app.use(express.json());
 const PORT = 3000;
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const WEB_APP_URL = process.env.TELEGRAM_MINI_APP_URL || "https://ais-dev-6b4qiuppxj2zxsupd36mmg-329310627949.asia-southeast1.run.app";
@@ -34,15 +35,18 @@ async function startServer() {
       );
     });
 
-    bot.launch()
-      .then(() => console.log("Telegram Bot is running..."))
-      .catch((err) => console.error("Error starting Telegram Bot:", err));
+    const webhookPath = "/api/telegram-webhook";
+    app.use(bot.webhookCallback(webhookPath));
+
+    bot.telegram.setWebhook(`${WEB_APP_URL}${webhookPath}`)
+      .then(() => console.log(`Telegram Bot is running via Webhook on ${WEB_APP_URL}${webhookPath}`))
+      .catch((err) => console.error("Error setting Telegram Webhook:", err));
 
     // Enable graceful stop
     process.once("SIGINT", () => bot.stop("SIGINT"));
     process.once("SIGTERM", () => bot.stop("SIGTERM"));
   } else {
-    console.warn("TELEGRAM_BOT_TOKEN find not found in environment variables. Bot functionality will be disabled.");
+    console.warn("TELEGRAM_BOT_TOKEN not found in environment variables. Bot functionality will be disabled.");
   }
 
   // API Routes (Optional)

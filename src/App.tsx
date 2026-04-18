@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { BottomNav } from "./components/BottomNav";
 import { PrayerCard } from "./components/PrayerCard";
 import NightSky from "./components/NightSky";
+import { Moon as MoonComponent } from "./components/Moon";
 import { PrayerRadarChart } from "./components/PrayerRadarChart";
 import { PrayerRadarChart2 } from "./components/PrayerRadarChart2";
 import { PrayerBarChart } from "./components/PrayerBarChart";
@@ -25,7 +26,7 @@ import { LocationSearchScreen } from "./components/LocationSearchScreen";
 import { LoadingScreen } from "./components/LoadingScreen";
 import { AnalyticsScreen } from "./components/AnalyticsScreen";
 import { CommunityScreen } from "./components/CommunityScreen";
-import { QuranVerseLive } from "./components/QuranVerseLive";
+import { QuranVerseLive, QuranSettings } from "./components/QuranVerseLive";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import {
   Drawer,
@@ -278,13 +279,15 @@ function AppContent() {
   const [tempStatus, setTempStatus] = useState<PrayerStatus | null>(null);
   const [tempContext, setTempContext] = useState<string[]>([]);
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
+  const [showQuranSettings, setShowQuranSettings] = useState(false);
   const [isStarrySky, setIsStarrySky] = useState(true);
   const [hijriDate, setHijriDate] = useState("");
   const [statsData, setStatsData] = useState<any[]>([]);
   const [allStatsRecords, setAllStatsRecords] = useState<PrayerRecord[] | null>(null);
-  const [statsPeriod, setStatsPeriod] = useState<number>(7);
-  const [activeChartType, setActiveChartType] = useState<string>("donut");
-  const [statsStatus, setStatsStatus] = useState<string>("all");
+  const [statsPeriod, setStatsPeriod] = useState<number>(() => parseInt(localStorage.getItem("statsPeriod") || "7"));
+  const [activeChartType, setActiveChartType] = useState<string>(() => localStorage.getItem("activeChartType") || "donut");
+  const [statisticsSubTab, setStatisticsSubTab] = useState<"stats" | "calendar">(() => (localStorage.getItem("statisticsSubTab") as "stats" | "calendar") || "stats");
+  const [statsStatus, setStatsStatus] = useState<string>(() => localStorage.getItem("statsStatus") || "all");
   const [isGeneratingMock, setIsGeneratingMock] = useState(false);
   const [isProfileEditing, setIsProfileEditing] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -297,6 +300,23 @@ function AppContent() {
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [isShareScreenOpen, setIsShareScreenOpen] = useState(false);
+  useEffect(() => {
+    localStorage.setItem("statsPeriod", statsPeriod.toString());
+  }, [statsPeriod]);
+
+  useEffect(() => {
+    localStorage.setItem("activeChartType", activeChartType);
+  }, [activeChartType]);
+
+  useEffect(() => {
+    localStorage.setItem("statisticsSubTab", statisticsSubTab);
+  }, [statisticsSubTab]);
+
+  useEffect(() => {
+    localStorage.setItem("statsStatus", statsStatus);
+  }, [statsStatus]);
+
+
   const [isLocationSearchOpen, setIsLocationSearchOpen] = useState(false);
   const [isUsernameModalOpen, setIsUsernameModalOpen] = useState(false);
   const [setupUsername, setSetupUsername] = useState("");
@@ -1918,13 +1938,28 @@ function AppContent() {
       <main className="flex-1 flex flex-col max-w-full mx-auto w-full p-4 pt-6 overflow-y-auto custom-scrollbar border-x border-muted/10">
         {activeTab === "home" && (
           <div className="flex flex-col flex-1">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex flex-col gap-1">
-                  <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none">
+            <div className="space-y-2 relative">
+              {activeTab === "home" && isDarkMode && isStarrySky && (
+                <div className="absolute -left-12 -top-12 z-0 opacity-100 pointer-events-none">
+                  <MoonComponent size={140} className="scale-x-[-1] opacity-90" />
+                </div>
+              )}
+              
+              <div className="flex items-center justify-between relative z-10">
+                <div className={cn(
+                  "flex flex-col gap-1 transition-all duration-500",
+                  activeTab === "home" && isDarkMode && isStarrySky && "mix-blend-difference"
+                )}>
+                  <h1 className={cn(
+                    "text-2xl font-bold tracking-tight leading-none",
+                    activeTab === "home" && isDarkMode && isStarrySky ? "text-white" : "text-foreground"
+                  )}>
                     {format(new Date(selectedDate), "d MMMM", { locale: i18n.language === "kk" ? kk : ru })}
                   </h1>
-                  <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <div className={cn(
+                    "flex items-center gap-1.5 text-xs font-medium",
+                    activeTab === "home" && isDarkMode && isStarrySky ? "text-white/80" : "text-muted-foreground"
+                  )}>
                     <span className="capitalize">{format(new Date(selectedDate), "EEEE", { locale: i18n.language === "kk" ? kk : ru })}</span>
                     <span>•</span>
                     <span>{hijriDate}</span>
@@ -1974,475 +2009,875 @@ function AppContent() {
               </div>
             </div>
 
-            <div className="mt-4 mb-2 px-[5%]">
-              <div className="border-b border-zinc-100 dark:border-zinc-800/50 pb-4">
-                <div className="flex overflow-x-auto no-scrollbar gap-1 px-1 snap-x snap-mandatory" ref={horizontalCalendarRef}>
-                  {(() => {
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    const days = Array.from({ length: 60 }).map((_, i) => {
-                      const d = new Date();
-                      d.setHours(0, 0, 0, 0);
-                      d.setDate(today.getDate() - 59 + i); // 59 days past + today
-                      return d;
-                    });
-                    
-                    return days.map((day, i) => {
-                      const dateStr = format(day, "yyyy-MM-dd");
-                      const isSelected = isSameDay(day, new Date(selectedDate));
-                      const isFuture = day > today;
-                      const statusColorName = getDominantStatusColor(dateStr);
-                      const dotColor = getStatusDotColor(statusColorName);
-                      
-                      return (
-                        <button
-                          key={i}
-                          data-selected={isSelected}
-                          onClick={() => {
-                            if (!isFuture) {
-                              setSelectedDate(dateStr);
-                            }
-                          }}
-                          disabled={isFuture}
-                          className={cn(
-                            "snap-center shrink-0 flex flex-col items-center justify-center w-11 h-14 rounded-2xl transition-all",
-                            isSelected 
-                              ? "bg-zinc-100 dark:bg-zinc-800 text-foreground shadow-sm" 
-                              : "bg-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/50 text-foreground",
-                            isFuture && "opacity-50 cursor-not-allowed hover:bg-transparent"
-                          )}
-                        >
-                          <span className={cn(
-                            "text-[9px] font-medium uppercase mb-0.5",
-                            isSelected ? "text-foreground" : "text-muted-foreground"
-                          )}>
-                            {['Жк', 'Дс', 'Сс', 'Ср', 'Бс', 'Жм', 'Сн'][day.getDay()]}
-                          </span>
-                          <span className="text-base font-bold leading-none">
-                            {format(day, "d")}
-                          </span>
-                          <div className="h-1 mt-1 flex items-center justify-center">
-                            {statusColorName && !isFuture && (
-                              <div className={cn(
-                                "w-1 h-1 rounded-full",
-                                dotColor
-                              )} />
-                            )}
-                          </div>
-                        </button>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
+            <div className="pt-2">
+              <QuranVerseLive 
+                showSettingsManaged={true} 
+                isSettingsOpen={showQuranSettings}
+                onSettingsToggle={(open) => setShowQuranSettings(open)} 
+              />
             </div>
 
-            <QuranVerseLive />
-
-            <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full px-4 md:px-0 pt-4 pb-32">
-              <LayoutGroup>
-                <div className="bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl shadow-sm relative">
-                  <div className="flex flex-col relative">
-                    {!prayerTimes
-                      ? Array.from({ length: 5 }).map((_, i) => (
-                          <Skeleton key={i} className="h-[64px] w-full border-b border-zinc-100 dark:border-zinc-800/50 last:border-0" />
-                        ))
-                      : prayers.map((prayer, index) => {
-                      const isExpanded = expandedPrayerId === prayer.id;
-                      const status = (currentRecord?.[prayer.id as keyof PrayerRecord] as PrayerStatus) || "none";
-                      
-                      const getHistoryForPrayer = (prayerId: string): PrayerStatus[] => {
-                        const history: PrayerStatus[] = [];
-                        // We use the selected date as the end point for the 7-day history
-                        const baseDate = new Date(selectedDate);
-                        for (let i = 6; i >= 0; i--) {
-                          const d = subDays(baseDate, i);
-                          const dateStr = format(d, "yyyy-MM-dd");
-                          const record = weeklyRecords[dateStr];
-                          history.push((record?.[prayerId as keyof PrayerRecord] as PrayerStatus) || "none");
-                        }
-                        return history;
-                      };
-
-                      return (
-                        <div key={prayer.id} style={{ zIndex: 10 - index }} className={cn(
-                          "flex flex-col border-b border-zinc-100 dark:border-zinc-800/50 last:border-0 transition-colors duration-300 relative",
-                          isExpanded && "bg-zinc-50/50 dark:bg-zinc-800/20"
-                        )}>
-                          <PrayerCard
-                            id={prayer.id}
-                            name={prayer.name}
-                            time={prayer.time || "--:--"}
-                            status={status}
-                            gender={gender}
-                            noCard={true}
-                            history={getHistoryForPrayer(prayer.id)}
-                            onClick={(e) => {
-                              if (e) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                              }
-                              if (prayer.isPseudo) return;
-                              
-                              if (isExpanded) {
-                                setExpandedPrayerId(null);
-                                setExpansionStep("status");
-                              } else {
-                                setSelectedPrayer(prayer.id);
-                                setTempStatus(status);
-                                const existingContexts = currentRecord?.contexts?.[
-                                  prayer.id as keyof typeof currentRecord.contexts
-                                ];
-                                setTempContext(Array.isArray(existingContexts) ? existingContexts : []);
-                                setExpandedPrayerId(prayer.id);
-                                setExpansionStep("status");
-                              }
-                            }}
-                          />
+            <div className="flex-1 flex flex-col w-full max-w-3xl mx-auto px-4 pt-2 pb-20 relative">
+              <div className="mb-3">
+                <AnimatePresence mode="wait">
+                  {showQuranSettings ? (
+                    <motion.div 
+                      key="quran-settings"
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.98 }}
+                      className="py-1"
+                    >
+                       <QuranSettings onClose={() => setShowQuranSettings(false)} />
+                    </motion.div>
+                  ) : (
+                    <motion.div 
+                      key="calendar"
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.98 }}
+                      className="flex overflow-x-auto no-scrollbar gap-2 snap-x snap-mandatory py-1 px-1" 
+                      ref={horizontalCalendarRef}
+                    >
+                      {(() => {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const days = Array.from({ length: 60 }).map((_, i) => {
+                          const d = new Date();
+                          d.setHours(0, 0, 0, 0);
+                          d.setDate(today.getDate() - 59 + i);
+                          return d;
+                        });
+                        
+                        return days.map((day, i) => {
+                          const dateStr = format(day, "yyyy-MM-dd");
+                          const isSelected = isSameDay(day, new Date(selectedDate));
+                          const isFuture = day > today;
+                          const statusColorName = getDominantStatusColor(dateStr);
+                          const dotColor = getStatusDotColor(statusColorName);
                           
-                          <AnimatePresence>
-                            {isExpanded && (
-                              <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: "auto", opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                transition={{ type: "spring", duration: 0.4, bounce: 0.2 }}
-                                className="overflow-hidden"
-                              >
-                                <div className="px-4 pb-2">
-                                  <div className="h-[48px] flex items-center overflow-hidden">
-                                    {expansionStep === "status" ? (
-                                      <div className="flex items-center justify-around w-full px-2">
-                                        {[
-                                          { id: "prayed", icon: User, color: gender === "female" ? "text-emerald-500" : "text-blue-500" },
-                                          ...(gender === "male" ? [{ id: "congregation", icon: Users2, color: "text-emerald-500" }] : []),
-                                          { id: "delayed", icon: Clock, color: "text-rose-500" },
-                                          { id: "missed", icon: Ban, color: "text-zinc-900 dark:text-zinc-100" },
-                                          ...(gender === "female" ? [{ id: "menstruation", icon: Flower2, color: "text-pink-500" }] : []),
-                                          { id: "none", icon: Plus, color: "text-muted-foreground/40" },
-                                        ].map((s) => (
-                                          <button
-                                            key={s.id}
-                                            onClick={() => {
-                                              if (s.id === "none") {
-                                                setTempStatus("none");
-                                                handleStatusUpdate();
-                                                return;
-                                              }
-                                              setTempStatus(s.id as PrayerStatus);
-                                              if (s.id === "menstruation") {
-                                                handleStatusUpdate();
-                                              } else {
-                                                setExpansionStep("context");
-                                              }
-                                            }}
-                                            className="relative w-10 h-10 flex items-center justify-center transition-all active:scale-90"
-                                          >
-                                            <s.icon className={cn("w-5 h-5 relative z-10", s.color)} />
-                                            {tempStatus === s.id && (
-                                              <motion.div 
-                                                layoutId="statusGlow"
-                                                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                                                className={cn(
-                                                  "absolute inset-0 rounded-full blur-md opacity-[0.15] -z-0 scale-100",
-                                                  s.id === "prayed" ? (gender === "female" ? "bg-emerald-500" : "bg-blue-500") :
-                                                  s.id === "congregation" ? "bg-emerald-500" :
-                                                  s.id === "delayed" ? "bg-rose-500" :
-                                                  s.id === "missed" ? "bg-zinc-900 dark:bg-zinc-100" :
-                                                  s.id === "menstruation" ? "bg-pink-500" : "bg-zinc-400"
-                                                )} 
-                                              />
-                                            )}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center w-full gap-2 px-2 overflow-x-auto no-scrollbar">
-                                        <button 
-                                          onClick={() => setExpansionStep("status")}
-                                          className="p-2 shrink-0 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
-                                        >
-                                          <Plus className="w-4 h-4 rotate-45" />
-                                        </button>
-                                        <div className="flex items-center gap-1 flex-1 overflow-x-auto no-scrollbar">
-                                          {contexts.map((ctx) => {
-                                            const isSelected = tempContext.includes(ctx.id);
-                                            return (
-                                              <button
-                                                key={ctx.id}
-                                                onClick={() => {
-                                                  if (isSelected) {
-                                                    setTempContext(tempContext.filter(c => c !== ctx.id));
-                                                  } else {
-                                                    setTempContext([...tempContext, ctx.id]);
-                                                  }
-                                                }}
-                                                className="relative w-9 h-9 shrink-0 flex items-center justify-center transition-all active:scale-90"
-                                              >
-                                                <ctx.icon className={cn("w-4 h-4 relative z-10", ctx.color)} />
-                                                {isSelected && (
-                                                  <motion.div 
-                                                    initial={{ opacity: 0, scale: 0.5 }}
-                                                    animate={{ opacity: 0.1, scale: 0.75 }}
-                                                    exit={{ opacity: 0, scale: 0.5 }}
-                                                    className={cn(
-                                                      "absolute inset-0 rounded-full blur-lg -z-0",
-                                                      ctx.color.includes("emerald") ? "bg-emerald-500" :
-                                                      ctx.color.includes("blue") ? "bg-blue-500" :
-                                                      ctx.color.includes("amber") ? "bg-amber-500" :
-                                                      ctx.color.includes("pink") ? "bg-pink-500" :
-                                                      ctx.color.includes("indigo") ? "bg-indigo-500" : "bg-zinc-400"
-                                                    )} 
-                                                  />
-                                                )}
-                                              </button>
-                                            );
-                                          })}
-                                        </div>
-                                        <Button 
-                                          variant="outline"
-                                          className="h-7 px-4 rounded-full font-bold text-[9px] uppercase tracking-wider border-zinc-200 dark:border-zinc-800 hover:bg-zinc-900 hover:text-white dark:hover:bg-zinc-100 dark:hover:text-zinc-900 shrink-0"
-                                          onClick={handleStatusUpdate}
-                                        >
-                                          {t("save")}
-                                        </Button>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </LayoutGroup>
-
-              {/* Қосымша намаздар (Extra Prayers) - Bento Style */}
-              <div className="mt-6 grid grid-cols-2 gap-3">
-                {/* Тахаджуд */}
-                <motion.div 
-                  whileTap={{ scale: 0.98 }}
-                  className={cn(
-                    "relative p-4 rounded-3xl border transition-all duration-300 overflow-hidden group",
-                    currentRecord?.tahajjud 
-                      ? "bg-indigo-50/50 border-indigo-100 dark:bg-indigo-500/10 dark:border-indigo-500/20" 
-                      : "bg-white dark:bg-zinc-900/40 border-zinc-100 dark:border-zinc-800/50"
+                          return (
+                            <button
+                              key={i}
+                              data-selected={isSelected}
+                              onClick={() => {
+                                if (!isFuture) {
+                                  setSelectedDate(dateStr);
+                                }
+                              }}
+                              disabled={isFuture}
+                              className={cn(
+                                "snap-center shrink-0 flex flex-col items-center justify-center min-w-[44px] h-[44px] rounded-xl transition-all border shadow-sm",
+                                isSelected 
+                                  ? "bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-foreground" 
+                                  : "bg-white dark:bg-zinc-900/40 border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 text-foreground",
+                                isFuture && "opacity-30 cursor-not-allowed hover:bg-transparent"
+                              )}
+                            >
+                              <span className={cn(
+                                "text-[7px] font-medium uppercase mb-0",
+                                isSelected ? "text-foreground" : "text-muted-foreground"
+                              )}>
+                                {['Жк', 'Дс', 'Сс', 'Ср', 'Бс', 'Жм', 'Сн'][day.getDay()]}
+                              </span>
+                              <span className="text-xs font-bold leading-tight">
+                                {format(day, "d")}
+                              </span>
+                              <div className="h-1 mt-1 flex items-center justify-center">
+                                {statusColorName && !isFuture && (
+                                  <div className={cn(
+                                    "w-1 h-1 rounded-full",
+                                    dotColor
+                                  )} />
+                                )}
+                              </div>
+                            </button>
+                          );
+                        });
+                      })()}
+                    </motion.div>
                   )}
-                >
-                  <div className="flex flex-col gap-3 relative z-10">
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <div className={cn(
-                          "w-10 h-10 rounded-2xl flex items-center justify-center transition-colors",
-                          currentRecord?.tahajjud ? "bg-indigo-500 text-white" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
-                        )}>
-                          <Moon className="w-5 h-5" />
-                        </div>
-                        {currentRecord?.tahajjud && (
-                          <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-indigo-500 border-2 border-background flex items-center justify-center">
-                            <Check className="w-2.5 h-2.5 text-white" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="font-bold text-sm">Тахаджуд</h4>
-                        <p className="text-[10px] text-muted-foreground">Түнгі құлшылық</p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          const isNowActive = !currentRecord?.tahajjud;
-                          handleExtraPrayerUpdate('tahajjud', isNowActive);
-                          if (isNowActive && !currentRecord?.tahajjudRakats) {
-                            handleExtraPrayerUpdate('tahajjudRakats', 2);
-                          }
-                        }}
-                        className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center transition-all",
-                          currentRecord?.tahajjud ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/30" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
-                        )}
-                      >
-                        <Plus className={cn("w-4 h-4 transition-transform", currentRecord?.tahajjud && "rotate-45")} />
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between mt-1">
-                      <div className="flex items-center bg-background/50 backdrop-blur-sm rounded-xl border p-1">
-                        <button 
-                          className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleExtraPrayerUpdate('tahajjudRakats', Math.max(2, (currentRecord?.tahajjudRakats || 2) - 2));
-                          }}
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span className="text-xs font-bold w-6 text-center">{currentRecord?.tahajjudRakats || 2}</span>
-                        <button 
-                          className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleExtraPrayerUpdate('tahajjudRakats', Math.min(12, (currentRecord?.tahajjudRakats || 2) + 2));
-                          }}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  {currentRecord?.tahajjud && (
-                    <motion.div 
-                      layoutId="tahajjudGlow"
-                      className="absolute -right-4 -bottom-4 w-24 h-24 bg-indigo-500/10 blur-3xl rounded-full"
-                    />
-                  )}
-                </motion.div>
-
-                {/* Духа */}
-                <motion.div 
-                  whileTap={{ scale: 0.98 }}
-                  className={cn(
-                    "relative p-4 rounded-3xl border transition-all duration-300 overflow-hidden group",
-                    currentRecord?.duha 
-                      ? "bg-amber-50/50 border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/20" 
-                      : "bg-white dark:bg-zinc-900/40 border-zinc-100 dark:border-zinc-800/50"
-                  )}
-                >
-                  <div className="flex flex-col gap-3 relative z-10">
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <div className={cn(
-                          "w-10 h-10 rounded-2xl flex items-center justify-center transition-colors",
-                          currentRecord?.duha ? "bg-amber-500 text-white" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
-                        )}>
-                          <Sun className="w-5 h-5" />
-                        </div>
-                        {currentRecord?.duha && (
-                          <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 border-2 border-background flex items-center justify-center">
-                            <Check className="w-2.5 h-2.5 text-white" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="font-bold text-sm">Духа</h4>
-                        <p className="text-[10px] text-muted-foreground">Сәске намазы</p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          const isNowActive = !currentRecord?.duha;
-                          handleExtraPrayerUpdate('duha', isNowActive);
-                          if (isNowActive && !currentRecord?.duhaRakats) {
-                            handleExtraPrayerUpdate('duhaRakats', 2);
-                          }
-                        }}
-                        className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center transition-all",
-                          currentRecord?.duha ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
-                        )}
-                      >
-                        <Plus className={cn("w-4 h-4 transition-transform", currentRecord?.duha && "rotate-45")} />
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between mt-1">
-                      <div className="flex items-center bg-background/50 backdrop-blur-sm rounded-xl border p-1">
-                        <button 
-                          className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleExtraPrayerUpdate('duhaRakats', Math.max(2, (currentRecord?.duhaRakats || 2) - 2));
-                          }}
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span className="text-xs font-bold w-6 text-center">{currentRecord?.duhaRakats || 2}</span>
-                        <button 
-                          className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleExtraPrayerUpdate('duhaRakats', Math.min(12, (currentRecord?.duhaRakats || 2) + 2));
-                          }}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  {currentRecord?.duha && (
-                    <motion.div 
-                      layoutId="duhaGlow"
-                      className="absolute -right-4 -bottom-4 w-24 h-24 bg-amber-500/10 blur-3xl rounded-full"
-                    />
-                  )}
-                </motion.div>
+                </AnimatePresence>
               </div>
 
-              {/* Жұма (Тек жұма күні көрінеді) */}
-              {new Date(selectedDate).getDay() === 5 && gender === "male" && (
-                <div className="mt-4 bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl overflow-hidden shadow-sm p-4">
-                  <div className="flex items-center justify-between px-2">
-                    <div className="flex items-center gap-3">
-                      <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center", currentRecord?.juma ? "bg-emerald-500 text-white" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800")}>
-                        <Users2 className="w-5 h-5" />
+              <div className="flex-1 flex flex-col justify-start min-w-0">
+                <LayoutGroup>
+                  <div className="bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl shadow-sm relative overflow-hidden">
+                    <div className="flex flex-col relative">
+                      {!prayerTimes
+                        ? Array.from({ length: 5 }).map((_, i) => (
+                            <Skeleton key={i} className="h-[64px] w-full border-b border-zinc-100 dark:border-zinc-800/50 last:border-0" />
+                          ))
+                        : prayers.map((prayer, index) => {
+                        const isExpanded = expandedPrayerId === prayer.id;
+                        const status = (currentRecord?.[prayer.id as keyof PrayerRecord] as PrayerStatus) || "none";
+                        
+                        const getHistoryForPrayer = (prayerId: string): PrayerStatus[] => {
+                          const history: PrayerStatus[] = [];
+                          // We use the selected date as the end point for the 7-day history
+                          const baseDate = new Date(selectedDate);
+                          for (let i = 6; i >= 0; i--) {
+                            const d = subDays(baseDate, i);
+                            const dateStr = format(d, "yyyy-MM-dd");
+                            const record = weeklyRecords[dateStr];
+                            history.push((record?.[prayerId as keyof PrayerRecord] as PrayerStatus) || "none");
+                          }
+                          return history;
+                        };
+
+                        return (
+                          <div key={prayer.id} style={{ zIndex: 10 - index }} className={cn(
+                            "flex flex-col border-b border-zinc-100 dark:border-zinc-800/50 last:border-0 transition-colors duration-300 relative",
+                            isExpanded && "bg-zinc-50/50 dark:bg-zinc-800/20"
+                          )}>
+                            <PrayerCard
+                              id={prayer.id}
+                              name={prayer.name}
+                              time={prayer.time || "--:--"}
+                              status={status}
+                              gender={gender}
+                              noCard={true}
+                              history={getHistoryForPrayer(prayer.id)}
+                              onClick={(e) => {
+                                if (e) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }
+                                if (prayer.isPseudo) return;
+                                
+                                if (isExpanded) {
+                                  setExpandedPrayerId(null);
+                                  setExpansionStep("status");
+                                } else {
+                                  setSelectedPrayer(prayer.id);
+                                  setTempStatus(status);
+                                  const existingContexts = currentRecord?.contexts?.[
+                                    prayer.id as keyof typeof currentRecord.contexts
+                                  ];
+                                  setTempContext(Array.isArray(existingContexts) ? existingContexts : []);
+                                  setExpandedPrayerId(prayer.id);
+                                  setExpansionStep("status");
+                                }
+                              }}
+                            />
+                            
+                            <AnimatePresence>
+                              {isExpanded && (
+                                <motion.div
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: "auto", opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  transition={{ type: "spring", duration: 0.4, bounce: 0.2 }}
+                                  className="overflow-hidden"
+                                >
+                                  <div className="px-4 pb-2">
+                                    <div className="h-[48px] flex items-center overflow-hidden">
+                                      {expansionStep === "status" ? (
+                                        <div className="flex items-center justify-around w-full px-2">
+                                          {[
+                                            { id: "prayed", icon: User, color: gender === "female" ? "text-emerald-500" : "text-blue-500" },
+                                            ...(gender === "male" ? [{ id: "congregation", icon: Users2, color: "text-emerald-500" }] : []),
+                                            { id: "delayed", icon: Clock, color: "text-rose-500" },
+                                            { id: "missed", icon: Ban, color: "text-zinc-900 dark:text-zinc-100" },
+                                            ...(gender === "female" ? [{ id: "menstruation", icon: Flower2, color: "text-pink-500" }] : []),
+                                            { id: "none", icon: Plus, color: "text-muted-foreground/40" },
+                                          ].map((s) => (
+                                            <button
+                                              key={s.id}
+                                              onClick={() => {
+                                                if (s.id === "none") {
+                                                  setTempStatus("none");
+                                                  handleStatusUpdate();
+                                                  return;
+                                                }
+                                                setTempStatus(s.id as PrayerStatus);
+                                                if (s.id === "menstruation") {
+                                                  handleStatusUpdate();
+                                                } else {
+                                                  setExpansionStep("context");
+                                                }
+                                              }}
+                                              className="relative w-10 h-10 flex items-center justify-center transition-all active:scale-90"
+                                            >
+                                              <s.icon className={cn("w-5 h-5 relative z-10", s.color)} />
+                                              {tempStatus === s.id && (
+                                                <motion.div 
+                                                  layoutId="statusGlow"
+                                                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                                                  className={cn(
+                                                    "absolute inset-0 rounded-full blur-md opacity-[0.15] -z-0 scale-100",
+                                                    s.id === "prayed" ? (gender === "female" ? "bg-emerald-500" : "bg-blue-500") :
+                                                    s.id === "congregation" ? "bg-emerald-500" :
+                                                    s.id === "delayed" ? "bg-rose-500" :
+                                                    s.id === "missed" ? "bg-zinc-900 dark:bg-zinc-100" :
+                                                    s.id === "menstruation" ? "bg-pink-500" : "bg-zinc-400"
+                                                  )} 
+                                                />
+                                              )}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center w-full gap-2 px-2 overflow-x-auto no-scrollbar">
+                                          <button 
+                                            onClick={() => setExpansionStep("status")}
+                                            className="p-2 shrink-0 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                                          >
+                                            <Plus className="w-4 h-4 rotate-45" />
+                                          </button>
+                                          <div className="flex items-center gap-1 flex-1 overflow-x-auto no-scrollbar">
+                                            {contexts.map((ctx) => {
+                                              const isSelected = tempContext.includes(ctx.id);
+                                              return (
+                                                <button
+                                                  key={ctx.id}
+                                                  onClick={() => {
+                                                    if (isSelected) {
+                                                      setTempContext(tempContext.filter(c => c !== ctx.id));
+                                                    } else {
+                                                      setTempContext([...tempContext, ctx.id]);
+                                                    }
+                                                  }}
+                                                  className="relative w-9 h-9 shrink-0 flex items-center justify-center transition-all active:scale-90"
+                                                >
+                                                  <ctx.icon className={cn("w-4 h-4 relative z-10", ctx.color)} />
+                                                  {isSelected && (
+                                                    <motion.div 
+                                                      initial={{ opacity: 0, scale: 0.5 }}
+                                                      animate={{ opacity: 0.1, scale: 0.75 }}
+                                                      exit={{ opacity: 0, scale: 0.5 }}
+                                                      className={cn(
+                                                        "absolute inset-0 rounded-full blur-lg -z-0",
+                                                        ctx.color.includes("emerald") ? "bg-emerald-500" :
+                                                        ctx.color.includes("blue") ? "bg-blue-500" :
+                                                        ctx.color.includes("amber") ? "bg-amber-500" :
+                                                        ctx.color.includes("pink") ? "bg-pink-500" :
+                                                        ctx.color.includes("indigo") ? "bg-indigo-500" : "bg-zinc-400"
+                                                      )} 
+                                                    />
+                                                  )}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                          <Button 
+                                            variant="outline"
+                                            className="h-7 px-4 rounded-full font-bold text-[9px] uppercase tracking-wider border-zinc-200 dark:border-zinc-800 hover:bg-zinc-900 hover:text-white dark:hover:bg-zinc-100 dark:hover:text-zinc-900 shrink-0"
+                                            onClick={handleStatusUpdate}
+                                          >
+                                            {t("save")}
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </LayoutGroup>
+
+                {/* Қосымша намаздар (Extra Prayers) - Bento Style */}
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                  {/* Тахаджуд */}
+                  <motion.div 
+                    whileTap={{ scale: 0.98 }}
+                    className={cn(
+                      "relative p-4 rounded-3xl border transition-all duration-300 overflow-hidden group",
+                      currentRecord?.tahajjud 
+                        ? "bg-indigo-50/50 border-indigo-100 dark:bg-indigo-500/10 dark:border-indigo-500/20" 
+                        : "bg-white dark:bg-zinc-900/40 border-zinc-100 dark:border-zinc-800/50"
+                    )}
+                  >
+                    <div className="flex flex-col gap-3 relative z-10">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <div className={cn(
+                            "w-10 h-10 rounded-2xl flex items-center justify-center transition-colors",
+                            currentRecord?.tahajjud ? "bg-indigo-500 text-white" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
+                          )}>
+                            <Moon className="w-5 h-5" />
+                          </div>
+                          {currentRecord?.tahajjud && (
+                            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-indigo-500 border-2 border-background flex items-center justify-center">
+                              <Check className="w-2.5 h-2.5 text-white" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-bold text-sm">Тахаджуд</h4>
+                          <p className="text-[10px] text-muted-foreground">Түнгі құлшылық</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const isNowActive = !currentRecord?.tahajjud;
+                            handleExtraPrayerUpdate('tahajjud', isNowActive);
+                            if (isNowActive && !currentRecord?.tahajjudRakats) {
+                              handleExtraPrayerUpdate('tahajjudRakats', 2);
+                            }
+                          }}
+                          className={cn(
+                            "w-8 h-8 rounded-full flex items-center justify-center transition-all",
+                            currentRecord?.tahajjud ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/30" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
+                          )}
+                        >
+                          <Plus className={cn("w-4 h-4 transition-transform", currentRecord?.tahajjud && "rotate-45")} />
+                        </button>
                       </div>
-                      <div>
-                        <p className="font-bold text-sm">Жұма намазы</p>
-                        <p className="text-[10px] text-muted-foreground">Мешітке бару</p>
+                      <div className="flex items-center justify-between mt-1">
+                        <div className="flex items-center bg-background/50 backdrop-blur-sm rounded-xl border p-1">
+                          <button 
+                            className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExtraPrayerUpdate('tahajjudRakats', Math.max(2, (currentRecord?.tahajjudRakats || 2) - 2));
+                            }}
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="text-xs font-bold w-6 text-center">{currentRecord?.tahajjudRakats || 2}</span>
+                          <button 
+                            className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExtraPrayerUpdate('tahajjudRakats', Math.min(12, (currentRecord?.tahajjudRakats || 2) + 2));
+                            }}
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    <Button
-                      variant={currentRecord?.juma ? "default" : "outline"}
-                      size="sm"
-                      className={cn("h-8 px-4 rounded-full font-bold text-[10px] uppercase tracking-wider", currentRecord?.juma && "bg-emerald-500 hover:bg-emerald-600")}
-                      onClick={() => handleExtraPrayerUpdate('juma', !currentRecord?.juma)}
-                    >
-                      {currentRecord?.juma ? "Қатыстым" : "Белгілеу"}
-                    </Button>
-                  </div>
+                    {currentRecord?.tahajjud && (
+                      <motion.div 
+                        layoutId="tahajjudGlow"
+                        className="absolute -right-4 -bottom-4 w-24 h-24 bg-indigo-500/10 blur-3xl rounded-full"
+                      />
+                    )}
+                  </motion.div>
+
+                  {/* Духа */}
+                  <motion.div 
+                    whileTap={{ scale: 0.98 }}
+                    className={cn(
+                      "relative p-4 rounded-3xl border transition-all duration-300 overflow-hidden group",
+                      currentRecord?.duha 
+                        ? "bg-amber-50/50 border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/20" 
+                        : "bg-white dark:bg-zinc-900/40 border-zinc-100 dark:border-zinc-800/50"
+                    )}
+                  >
+                    <div className="flex flex-col gap-3 relative z-10">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <div className={cn(
+                            "w-10 h-10 rounded-2xl flex items-center justify-center transition-colors",
+                            currentRecord?.duha ? "bg-amber-500 text-white" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
+                          )}>
+                            <Sun className="w-5 h-5" />
+                          </div>
+                          {currentRecord?.duha && (
+                            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 border-2 border-background flex items-center justify-center">
+                              <Check className="w-2.5 h-2.5 text-white" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-bold text-sm">Духа</h4>
+                          <p className="text-[10px] text-muted-foreground">Сәске намазы</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const isNowActive = !currentRecord?.duha;
+                            handleExtraPrayerUpdate('duha', isNowActive);
+                            if (isNowActive && !currentRecord?.duhaRakats) {
+                              handleExtraPrayerUpdate('duhaRakats', 2);
+                            }
+                          }}
+                          className={cn(
+                            "w-8 h-8 rounded-full flex items-center justify-center transition-all",
+                            currentRecord?.duha ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
+                          )}
+                        >
+                          <Plus className={cn("w-4 h-4 transition-transform", currentRecord?.duha && "rotate-45")} />
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <div className="flex items-center bg-background/50 backdrop-blur-sm rounded-xl border p-1">
+                          <button 
+                            className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExtraPrayerUpdate('duhaRakats', Math.max(2, (currentRecord?.duhaRakats || 2) - 2));
+                            }}
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="text-xs font-bold w-6 text-center">{currentRecord?.duhaRakats || 2}</span>
+                          <button 
+                            className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExtraPrayerUpdate('duhaRakats', Math.min(12, (currentRecord?.duhaRakats || 2) + 2));
+                            }}
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    {currentRecord?.duha && (
+                      <motion.div 
+                        layoutId="duhaGlow"
+                        className="absolute -right-4 -bottom-4 w-24 h-24 bg-amber-500/10 blur-3xl rounded-full"
+                      />
+                    )}
+                  </motion.div>
                 </div>
-              )}
+
+                {/* Жұма (Тек жұма күні көрінеді) */}
+                {new Date(selectedDate).getDay() === 5 && gender === "male" && (
+                  <div className="mt-4 bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl overflow-hidden shadow-sm p-4">
+                    <div className="flex items-center justify-between px-2">
+                      <div className="flex items-center gap-3">
+                        <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center", currentRecord?.juma ? "bg-emerald-500 text-white" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800")}>
+                          <Users2 className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-sm">Жұма намазы</p>
+                          <p className="text-[10px] text-muted-foreground">Мешітке бару</p>
+                        </div>
+                      </div>
+                      <Button
+                        variant={currentRecord?.juma ? "default" : "outline"}
+                        size="sm"
+                        className={cn("h-8 px-4 rounded-full font-bold text-[10px] uppercase tracking-wider", currentRecord?.juma && "bg-emerald-500 hover:bg-emerald-600")}
+                        onClick={() => handleExtraPrayerUpdate('juma', !currentRecord?.juma)}
+                      >
+                        {currentRecord?.juma ? "Қатыстым" : "Белгілеу"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
 
-        {activeTab === "calendar" && (
-          <div 
-            className="space-y-6 max-w-7xl mx-auto"
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-          >
+
+        
+
+        {activeTab === "statistics" && (
+          <div className="space-y-6 pb-24 px-4 pt-4 max-w-5xl mx-auto w-full">
             <div className="flex flex-col space-y-4">
               <div className="flex items-center justify-between">
                 <h1 className="text-3xl font-bold tracking-tight text-foreground">
-                  {t("calendar")}
+                  {t("statistics")}
                 </h1>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setIsShareScreenOpen(true)}
+                    className="h-8 px-4"
+                  >
+                    <Share2 className="w-4 h-4 mr-2" />
+                    Бөлісу
+                  </Button>
+                  {user?.email === "ilyasuly.isakhan@gmail.com" && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={generateMockData}
+                      disabled={isGeneratingMock}
+                      className="text-[10px] h-8 rounded-full"
+                    >
+                      {isGeneratingMock ? "..." : "Mock Data"}
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <Tabs 
-                value={calendarView} 
-                onValueChange={(v: any) => setCalendarView(v)}
+                value={statisticsSubTab} 
+                onValueChange={(v: any) => setStatisticsSubTab(v)}
                 className="w-full"
               >
                 <TabsList className="grid w-full grid-cols-2 h-12 p-1 bg-muted rounded-xl">
                   <TabsTrigger 
-                    value="weekly" 
+                    value="stats" 
                     className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold"
                   >
-                    {t("weekly", { defaultValue: "Апталық" })}
+                    Статистика
                   </TabsTrigger>
                   <TabsTrigger 
-                    value="monthly" 
+                    value="calendar" 
                     className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold"
                   >
-                    {t("monthly", { defaultValue: "Айлық" })}
+                    Күнтізбе
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>
+              
+              {statisticsSubTab === "stats" && (
+                <>
+                  <div className="flex flex-col space-y-4 w-full">
+                  {/* 2. Period Filter */}
+                <div className="w-full overflow-x-auto no-scrollbar">
+                  <Tabs 
+                    value={statsPeriod.toString()} 
+                    onValueChange={(v) => setStatsPeriod(parseInt(v))}
+                    className="w-full"
+                  >
+                    <TabsList className="flex h-14 w-max items-center justify-start gap-1 p-1 bg-muted/50 rounded-xl">
+                      <TabsTrigger 
+                        value="3650"
+                        className="w-12 h-full rounded-lg transition-all flex flex-col items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                      >
+                        <LayoutGrid className="w-5 h-5 text-slate-500" />
+                      </TabsTrigger>
+                      {[
+                        { value: "7", label: "1 " + t("week", { defaultValue: "апта" }) },
+                        { value: "14", label: "2 " + t("week", { defaultValue: "апта" }) },
+                        { value: "21", label: "3 " + t("week", { defaultValue: "апта" }) },
+                        { value: "30", label: "1 " + t("month", { defaultValue: "ай" }) },
+                        { value: "60", label: "2 " + t("month", { defaultValue: "ай" }) },
+                        { value: "90", label: "3 " + t("month", { defaultValue: "ай" }) },
+                        { value: "180", label: "6 " + t("month", { defaultValue: "ай" }) },
+                        { value: "365", label: "1 " + t("year", { defaultValue: "жыл" }) },
+                      ].map((period) => (
+                        <TabsTrigger 
+                          key={period.value}
+                          value={period.value}
+                          className="px-4 h-full rounded-lg transition-all whitespace-nowrap text-xs font-bold flex flex-col items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                        >
+                          {period.label}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </Tabs>
+                </div>
 
-            {calendarView === "weekly" ? (
-              <div className="bg-card rounded-2xl border border-muted/40 shadow-sm p-4 flex flex-col items-center w-full max-w-md mx-auto">
+                {/* 3. Status Filter */}
+                <AnimatePresence>
+                  {!["stacked", "pie", "donut"].includes(activeChartType) && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="w-full overflow-hidden"
+                    >
+                      <Tabs 
+                        value={statsStatus} 
+                        onValueChange={setStatsStatus}
+                        className="w-full"
+                      >
+                        <TabsList className="grid w-full grid-cols-5 h-14 p-1 bg-muted/50 rounded-xl">
+                          <TabsTrigger value="all" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                            <LayoutGrid className="w-5 h-5 text-slate-500" />
+                          </TabsTrigger>
+                          {gender === "male" && (
+                            <TabsTrigger value="congregation" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                              <Users2 className="w-5 h-5 text-emerald-500" />
+                            </TabsTrigger>
+                          )}
+                          <TabsTrigger value="prayed" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                            <User className={cn("w-5 h-5", gender === "female" ? "text-emerald-500" : "text-blue-500")} />
+                          </TabsTrigger>
+                          <TabsTrigger value="delayed" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                            <Clock className="w-5 h-5 text-rose-500" />
+                          </TabsTrigger>
+                          <TabsTrigger value="missed" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                            <Ban className="w-5 h-5 text-zinc-500" />
+                          </TabsTrigger>
+                          {gender === "female" && (
+                            <TabsTrigger value="menstruation" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                              <Flower2 className="w-5 h-5 text-pink-500" />
+                            </TabsTrigger>
+                          )}
+                        </TabsList>
+                      </Tabs>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+            {isLoadingStats ? (
+              <LoadingScreen fullScreen={false} message={t("loading")} />
+            ) : statsData.length > 0 ? (
+              <div className="space-y-6">
+                <div className="p-2">
+                  {(() => {
+                    const filteredStatsData = statsData;
+                    
+                    return (
+                      <>
+                        {activeChartType === "donut" && <PrayerDonutChart data={filteredStatsData} gender={gender} />}
+                        {activeChartType === "pie" && <PrayerPieChart data={filteredStatsData} gender={gender} />}
+                        {activeChartType === "bar" && <PrayerBarChart data={statsData} activeStatus={statsStatus} gender={gender} />}
+                        {activeChartType === "stacked" && <PrayerStackedBarChart data={statsData} gender={gender} />}
+                        {activeChartType === "line" && <PrayerLineChart data={filteredStatsData} activeStatus={statsStatus} gender={gender} />}
+                        {activeChartType === "area" && <PrayerAreaChart data={filteredStatsData} activeStatus={statsStatus} gender={gender} />}
+                        {activeChartType === "radar1" && <PrayerRadarChart data={statsData} activeStatus={statsStatus} gender={gender} />}
+                        {activeChartType === "radar2" && <PrayerRadarChart2 data={statsData} activeStatus={statsStatus} gender={gender} />}
+                      </>
+                    );
+                  })()}
+                </div>
+
+                {/* 1. Chart Type Filter (Moved Below Charts and Above Stats Grid) */}
+                <div className="w-full overflow-x-auto no-scrollbar pt-2 pb-2">
+                  <div className="flex items-center gap-3 w-max px-1">
+                    {[
+                      { value: "donut", label: "Donut", icon: CircleDashed, color: "text-indigo-500", bg: "bg-indigo-50" },
+                      { value: "pie", label: "Pie", icon: PieChart, color: "text-blue-500", bg: "bg-blue-50" },
+                      { value: "bar", label: "Bar", icon: BarChart3, color: "text-emerald-500", bg: "bg-emerald-50" },
+                      { value: "stacked", label: "Stacked", icon: AlignEndHorizontal, color: "text-amber-500", bg: "bg-amber-50" },
+                      { value: "line", label: "Line", icon: LineChart, color: "text-rose-500", bg: "bg-rose-50" },
+                      { value: "area", label: "Area", icon: AreaChart, color: "text-purple-500", bg: "bg-purple-50" },
+                      { value: "radar1", label: "Radar 1", icon: Activity, color: "text-cyan-500", bg: "bg-cyan-50" },
+                      { value: "radar2", label: "Radar 2", icon: Hexagon, color: "text-teal-500", bg: "bg-teal-50" },
+                    ].map((item) => (
+                      <button
+                        key={item.value}
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setActiveChartType(item.value);
+                        }}
+                        className={cn(
+                          "flex flex-col items-center justify-center w-[72px] gap-2 transition-all",
+                          activeChartType === item.value ? "opacity-100" : "opacity-70 hover:opacity-100"
+                        )}
+                      >
+                        <div className={cn(
+                          "w-full h-8 flex items-center justify-center text-[10px] font-bold uppercase tracking-tighter rounded-lg transition-all",
+                          activeChartType === item.value 
+                            ? "bg-background shadow-sm border border-border/50 text-foreground" 
+                            : "bg-muted/50 text-muted-foreground hover:bg-muted/80"
+                        )}>
+                          {item.label}
+                        </div>
+                        <div className={cn(
+                          "flex items-center justify-center w-full h-16 rounded-2xl transition-all border",
+                          activeChartType === item.value 
+                            ? "border-primary bg-primary/5 shadow-sm" 
+                            : "border-muted/60 bg-muted/20 hover:bg-muted/40"
+                        )}>
+                          <div className={cn("p-2 rounded-xl", activeChartType === item.value ? item.bg : "bg-transparent")}>
+                            <item.icon className={cn("w-6 h-6", item.color)} />
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground space-y-4">
+                <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
+                  <BarChart2 className="w-10 h-10 text-muted" />
+                </div>
+                <p className="text-center px-8 text-sm font-medium">
+                  Статистиканы көру үшін кемінде бір күн намаз белгілеуіңіз қажет.
+                </p>
+                {user?.email === "ilyasuly.isakhan@gmail.com" && (
+                  <Button variant="outline" onClick={generateMockData} disabled={isGeneratingMock}>
+                    Тесттік деректерді жасау
+                  </Button>
+                )}
+              </div>
+            )}
+            </>
+          )}
+
+          {statisticsSubTab === "calendar" && (
+              <div className="flex flex-col gap-6 w-full max-w-md mx-auto">
+                <div className="bg-card rounded-2xl border border-muted/40 shadow-sm p-4 flex flex-col items-center w-full">
+                  <div className="flex justify-between items-center w-full mb-4 px-2">
+                  <Button 
+                    variant="outline" 
+                    className="h-8 w-8 bg-transparent p-0 opacity-50 hover:opacity-100" 
+                    onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="text-sm font-medium">
+                    {['Қаңтар', 'Ақпан', 'Наурыз', 'Сәуір', 'Мамыр', 'Маусым', 'Шілде', 'Тамыз', 'Қыркүйек', 'Қазан', 'Қараша', 'Желтоқсан'][currentMonth.getMonth()]} {currentMonth.getFullYear()}
+                  </div>
+                  <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    className="h-8 w-8 bg-transparent p-0 opacity-50 hover:opacity-100" 
+                    onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-8 w-8 bg-transparent p-0 opacity-80 hover:opacity-100 text-primary"
+                    onClick={() => setIsShareScreenOpen(true)}
+                  >
+                    <Share2 className="w-4 h-4" />
+                  </Button>
+                  </div>
+                </div>
+
+                <div className="w-full">
+                  <div className="grid grid-cols-7 gap-y-2 mb-2">
+                    {['Дс', 'Сс', 'Ср', 'Бс', 'Жм', 'Сн', 'Жк'].map((dayName, i) => (
+                      <div key={i} className="text-muted-foreground rounded-md w-9 font-normal text-[0.8rem] text-center mx-auto">
+                        {dayName}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-y-1">
+                    {(() => {
+                      const monthStart = startOfMonth(currentMonth);
+                      const monthEnd = endOfMonth(monthStart);
+                      const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
+                      const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
+                      
+                      return eachDayOfInterval({ start: startDate, end: endDate }).map((day, i) => {
+                        const dateStr = format(day, "yyyy-MM-dd");
+                        const isSelected = isSameDay(day, new Date(selectedDate));
+                        const isToday = isSameDay(day, new Date());
+                        const isCurrentMonth = isSameMonth(day, currentMonth);
+                        const isFuture = day > new Date();
+                        
+                        const statusColorName = getDominantStatusColor(dateStr);
+                        const dotColor = getStatusDotColor(statusColorName);
+
+                        return (
+                          <div key={i} className="flex justify-center">
+                            <button
+                              onClick={() => {
+                                if (!isFuture) {
+                                  setSelectedDate(dateStr);
+                                  setActiveTab("home");
+                                }
+                              }}
+                              disabled={isFuture}
+                              className={cn(
+                                "relative h-9 w-9 p-0 font-normal text-sm rounded-md flex flex-col items-center justify-center transition-colors",
+                                isSelected
+                                  ? "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground"
+                                  : isToday
+                                  ? "bg-accent text-accent-foreground"
+                                  : "hover:bg-accent hover:text-accent-foreground",
+                                !isCurrentMonth && "text-muted-foreground opacity-50",
+                                isFuture && "opacity-50 cursor-not-allowed hover:bg-transparent"
+                              )}
+                            >
+                              <span>{format(day, "d")}</span>
+                              {statusColorName && !isFuture && (
+                                <div className={cn(
+                                  "w-1.5 h-1.5 rounded-full absolute bottom-1", 
+                                  dotColor,
+                                  isSelected && "bg-primary-foreground"
+                                )} />
+                              )}
+                            </button>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-card rounded-2xl border border-muted/40 shadow-sm p-4 flex flex-col items-center w-full max-w-4xl mx-auto">
                 <div className="flex justify-between items-center w-full mb-4 px-2">
+                  <Button 
+                    variant="outline" 
+                    className="h-8 w-8 bg-transparent p-0 opacity-50 hover:opacity-100" 
+                    onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="text-sm font-medium">
+                    Динамика
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    className="h-8 w-8 bg-transparent p-0 opacity-50 hover:opacity-100" 
+                    onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="w-full relative">
+                  <div className="grid grid-cols-7 mb-2">
+                    {['Дс', 'Сс', 'Ср', 'Бс', 'Жм', 'Сн', 'Жк'].map((dayName, i) => (
+                      <div key={i} className="text-muted-foreground font-normal text-[0.8rem] text-center">
+                        {dayName}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 border-t border-l border-muted/30 rounded-sm overflow-hidden bg-card/30">
+                    {(() => {
+                      const monthStart = startOfMonth(currentMonth);
+                      const monthEnd = endOfMonth(monthStart);
+                      const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
+                      const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
+                      
+                      return eachDayOfInterval({ start: startDate, end: endDate }).map((day, i) => {
+                        const dateStr = format(day, "yyyy-MM-dd");
+                        const isSelected = isSameDay(day, new Date(selectedDate));
+                        const isToday = isSameDay(day, new Date());
+                        const isCurrentMonth = isSameMonth(day, currentMonth);
+                        const isFuture = day > new Date();
+                        
+                        const { score, colorClass, sizePx } = getDynamicDayScore(dateStr);
+
+                        return (
+                          <div key={i} className="aspect-square border-b border-r border-muted/30 flex items-center justify-center relative">
+                            <button
+                              onClick={() => {
+                                if (!isFuture) {
+                                  setSelectedDate(dateStr);
+                                  setActiveTab("home");
+                                }
+                              }}
+                              disabled={isFuture}
+                              className={cn(
+                                "absolute inset-0 w-full h-full flex items-center justify-center transition-colors",
+                                isSelected
+                                  ? "bg-primary/10"
+                                  : isToday
+                                  ? "bg-accent/30"
+                                  : "hover:bg-accent/30",
+                                !isCurrentMonth && "opacity-30",
+                                isFuture && "opacity-50 cursor-not-allowed hover:bg-transparent"
+                              )}
+                            >
+                              {!isFuture && score >= 0 && (
+                                <div 
+                                  className={cn(
+                                    "rounded-full transition-all duration-300", 
+                                    colorClass
+                                  )} 
+                                  style={{ width: `${sizePx}px`, height: `${sizePx}px` }}
+                                />
+                              )}
+                            </button>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              </div>
+            
+{/* Weekly Calendar Start */}
+<div className="bg-card rounded-2xl border border-muted/40 shadow-sm p-4 flex flex-col items-center w-full max-w-md mx-auto">
+              <div className="flex justify-between items-center w-full mb-4 px-2">
                   <Button 
                     variant="outline" 
                     className="h-8 w-8 bg-transparent p-0 opacity-50 hover:opacity-100" 
@@ -2594,444 +3029,10 @@ function AppContent() {
                   </div>
                 </div>
               </div>
-            ) : (
-              <div className="flex flex-col gap-6 w-full max-w-md mx-auto">
-                <div className="bg-card rounded-2xl border border-muted/40 shadow-sm p-4 flex flex-col items-center w-full">
-                  <div className="flex justify-between items-center w-full mb-4 px-2">
-                  <Button 
-                    variant="outline" 
-                    className="h-8 w-8 bg-transparent p-0 opacity-50 hover:opacity-100" 
-                    onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <div className="text-sm font-medium">
-                    {['Қаңтар', 'Ақпан', 'Наурыз', 'Сәуір', 'Мамыр', 'Маусым', 'Шілде', 'Тамыз', 'Қыркүйек', 'Қазан', 'Қараша', 'Желтоқсан'][currentMonth.getMonth()]} {currentMonth.getFullYear()}
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    className="h-8 w-8 bg-transparent p-0 opacity-50 hover:opacity-100" 
-                    onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
+{/* Weekly Calendar End */}
+</div>
+          )}
 
-                <div className="w-full">
-                  <div className="grid grid-cols-7 gap-y-2 mb-2">
-                    {['Дс', 'Сс', 'Ср', 'Бс', 'Жм', 'Сн', 'Жк'].map((dayName, i) => (
-                      <div key={i} className="text-muted-foreground rounded-md w-9 font-normal text-[0.8rem] text-center mx-auto">
-                        {dayName}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-7 gap-y-1">
-                    {(() => {
-                      const monthStart = startOfMonth(currentMonth);
-                      const monthEnd = endOfMonth(monthStart);
-                      const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
-                      const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
-                      
-                      return eachDayOfInterval({ start: startDate, end: endDate }).map((day, i) => {
-                        const dateStr = format(day, "yyyy-MM-dd");
-                        const isSelected = isSameDay(day, new Date(selectedDate));
-                        const isToday = isSameDay(day, new Date());
-                        const isCurrentMonth = isSameMonth(day, currentMonth);
-                        const isFuture = day > new Date();
-                        
-                        const statusColorName = getDominantStatusColor(dateStr);
-                        const dotColor = getStatusDotColor(statusColorName);
-
-                        return (
-                          <div key={i} className="flex justify-center">
-                            <button
-                              onClick={() => {
-                                if (!isFuture) {
-                                  setSelectedDate(dateStr);
-                                  setActiveTab("home");
-                                }
-                              }}
-                              disabled={isFuture}
-                              className={cn(
-                                "relative h-9 w-9 p-0 font-normal text-sm rounded-md flex flex-col items-center justify-center transition-colors",
-                                isSelected
-                                  ? "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground"
-                                  : isToday
-                                  ? "bg-accent text-accent-foreground"
-                                  : "hover:bg-accent hover:text-accent-foreground",
-                                !isCurrentMonth && "text-muted-foreground opacity-50",
-                                isFuture && "opacity-50 cursor-not-allowed hover:bg-transparent"
-                              )}
-                            >
-                              <span>{format(day, "d")}</span>
-                              {statusColorName && !isFuture && (
-                                <div className={cn(
-                                  "w-1.5 h-1.5 rounded-full absolute bottom-1", 
-                                  dotColor,
-                                  isSelected && "bg-primary-foreground"
-                                )} />
-                              )}
-                            </button>
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-card rounded-2xl border border-muted/40 shadow-sm p-4 flex flex-col items-center w-full max-w-4xl mx-auto">
-                <div className="flex justify-between items-center w-full mb-4 px-2">
-                  <Button 
-                    variant="outline" 
-                    className="h-8 w-8 bg-transparent p-0 opacity-50 hover:opacity-100" 
-                    onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <div className="text-sm font-medium">
-                    Динамика
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    className="h-8 w-8 bg-transparent p-0 opacity-50 hover:opacity-100" 
-                    onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                <div className="w-full relative">
-                  <div className="grid grid-cols-7 mb-2">
-                    {['Дс', 'Сс', 'Ср', 'Бс', 'Жм', 'Сн', 'Жк'].map((dayName, i) => (
-                      <div key={i} className="text-muted-foreground font-normal text-[0.8rem] text-center">
-                        {dayName}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-7 border-t border-l border-muted/30 rounded-sm overflow-hidden bg-card/30">
-                    {(() => {
-                      const monthStart = startOfMonth(currentMonth);
-                      const monthEnd = endOfMonth(monthStart);
-                      const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
-                      const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
-                      
-                      return eachDayOfInterval({ start: startDate, end: endDate }).map((day, i) => {
-                        const dateStr = format(day, "yyyy-MM-dd");
-                        const isSelected = isSameDay(day, new Date(selectedDate));
-                        const isToday = isSameDay(day, new Date());
-                        const isCurrentMonth = isSameMonth(day, currentMonth);
-                        const isFuture = day > new Date();
-                        
-                        const { score, colorClass, sizePx } = getDynamicDayScore(dateStr);
-
-                        return (
-                          <div key={i} className="aspect-square border-b border-r border-muted/30 flex items-center justify-center relative">
-                            <button
-                              onClick={() => {
-                                if (!isFuture) {
-                                  setSelectedDate(dateStr);
-                                  setActiveTab("home");
-                                }
-                              }}
-                              disabled={isFuture}
-                              className={cn(
-                                "absolute inset-0 w-full h-full flex items-center justify-center transition-colors",
-                                isSelected
-                                  ? "bg-primary/10"
-                                  : isToday
-                                  ? "bg-accent/30"
-                                  : "hover:bg-accent/30",
-                                !isCurrentMonth && "opacity-30",
-                                isFuture && "opacity-50 cursor-not-allowed hover:bg-transparent"
-                              )}
-                            >
-                              {!isFuture && score >= 0 && (
-                                <div 
-                                  className={cn(
-                                    "rounded-full transition-all duration-300", 
-                                    colorClass
-                                  )} 
-                                  style={{ width: `${sizePx}px`, height: `${sizePx}px` }}
-                                />
-                              )}
-                            </button>
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-              </div>
-            </div>
-            )}
-
-          </div>
-        )}
-
-        {activeTab === "statistics" && (
-          <div className="space-y-6 max-w-5xl mx-auto w-full">
-            <div className="flex flex-col space-y-4">
-              <div className="flex items-center justify-between">
-                <h1 className="text-3xl font-bold tracking-tight text-foreground">
-                  {t("statistics")}
-                </h1>
-                <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => setIsShareScreenOpen(true)}
-                    className="h-8 px-4"
-                  >
-                    <Share2 className="w-4 h-4 mr-2" />
-                    Бөлісу
-                  </Button>
-                  {user?.email === "ilyasuly.isakhan@gmail.com" && (
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={generateMockData}
-                      disabled={isGeneratingMock}
-                      className="text-[10px] h-8 rounded-full"
-                    >
-                      {isGeneratingMock ? "..." : "Mock Data"}
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-col space-y-4 w-full">
-                {/* 1. Chart Type Filter (Text & Icons combined for synced scrolling) */}
-                <div className="w-full overflow-x-auto no-scrollbar pb-2">
-                  <div className="flex items-center gap-3 w-max px-1">
-                    {[
-                      { value: "donut", label: "Donut", icon: CircleDashed, color: "text-indigo-500", bg: "bg-indigo-50" },
-                      { value: "pie", label: "Pie", icon: PieChart, color: "text-blue-500", bg: "bg-blue-50" },
-                      { value: "bar", label: "Bar", icon: BarChart3, color: "text-emerald-500", bg: "bg-emerald-50" },
-                      { value: "stacked", label: "Stacked", icon: AlignEndHorizontal, color: "text-amber-500", bg: "bg-amber-50" },
-                      { value: "line", label: "Line", icon: LineChart, color: "text-rose-500", bg: "bg-rose-50" },
-                      { value: "area", label: "Area", icon: AreaChart, color: "text-purple-500", bg: "bg-purple-50" },
-                      { value: "radar1", label: "Radar 1", icon: Activity, color: "text-cyan-500", bg: "bg-cyan-50" },
-                      { value: "radar2", label: "Radar 2", icon: Hexagon, color: "text-teal-500", bg: "bg-teal-50" },
-                    ].map((item) => (
-                      <button
-                        key={item.value}
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setActiveChartType(item.value);
-                        }}
-                        className={cn(
-                          "flex flex-col items-center justify-center w-[72px] gap-2 transition-all",
-                          activeChartType === item.value ? "opacity-100" : "opacity-70 hover:opacity-100"
-                        )}
-                      >
-                        <div className={cn(
-                          "w-full h-8 flex items-center justify-center text-[10px] font-bold uppercase tracking-tighter rounded-lg transition-all",
-                          activeChartType === item.value 
-                            ? "bg-background shadow-sm border border-border/50 text-foreground" 
-                            : "bg-muted/50 text-muted-foreground hover:bg-muted/80"
-                        )}>
-                          {item.label}
-                        </div>
-                        <div className={cn(
-                          "flex items-center justify-center w-full h-16 rounded-2xl transition-all border",
-                          activeChartType === item.value 
-                            ? "border-primary bg-primary/5 shadow-sm" 
-                            : "border-muted/60 bg-muted/20 hover:bg-muted/40"
-                        )}>
-                          <div className={cn("p-2 rounded-xl", activeChartType === item.value ? item.bg : "bg-transparent")}>
-                            <item.icon className={cn("w-6 h-6", item.color)} />
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 2. Period Filter */}
-                <div className="w-full overflow-x-auto no-scrollbar">
-                  <Tabs 
-                    value={statsPeriod.toString()} 
-                    onValueChange={(v) => setStatsPeriod(parseInt(v))}
-                    className="w-full"
-                  >
-                    <TabsList className="flex h-14 w-max items-center justify-start gap-1 p-1 bg-muted/50 rounded-xl">
-                      <TabsTrigger 
-                        value="3650"
-                        className="w-12 h-full rounded-lg transition-all flex flex-col items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                      >
-                        <LayoutGrid className="w-5 h-5 text-slate-500" />
-                      </TabsTrigger>
-                      {[
-                        { value: "7", label: "1 " + t("week", { defaultValue: "апта" }) },
-                        { value: "14", label: "2 " + t("week", { defaultValue: "апта" }) },
-                        { value: "21", label: "3 " + t("week", { defaultValue: "апта" }) },
-                        { value: "30", label: "1 " + t("month", { defaultValue: "ай" }) },
-                        { value: "60", label: "2 " + t("month", { defaultValue: "ай" }) },
-                        { value: "90", label: "3 " + t("month", { defaultValue: "ай" }) },
-                        { value: "180", label: "6 " + t("month", { defaultValue: "ай" }) },
-                        { value: "365", label: "1 " + t("year", { defaultValue: "жыл" }) },
-                      ].map((period) => (
-                        <TabsTrigger 
-                          key={period.value}
-                          value={period.value}
-                          className="px-4 h-full rounded-lg transition-all whitespace-nowrap text-xs font-bold flex flex-col items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                        >
-                          {period.label}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                  </Tabs>
-                </div>
-
-                {/* 3. Status Filter */}
-                <AnimatePresence>
-                  {!["stacked", "pie", "donut"].includes(activeChartType) && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="w-full overflow-hidden"
-                    >
-                      <Tabs 
-                        value={statsStatus} 
-                        onValueChange={setStatsStatus}
-                        className="w-full"
-                      >
-                        <TabsList className="grid w-full grid-cols-5 h-14 p-1 bg-muted/50 rounded-xl">
-                          <TabsTrigger value="all" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                            <LayoutGrid className="w-5 h-5 text-slate-500" />
-                          </TabsTrigger>
-                          {gender === "male" && (
-                            <TabsTrigger value="congregation" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                              <Users2 className="w-5 h-5 text-emerald-500" />
-                            </TabsTrigger>
-                          )}
-                          <TabsTrigger value="prayed" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                            <User className={cn("w-5 h-5", gender === "female" ? "text-emerald-500" : "text-blue-500")} />
-                          </TabsTrigger>
-                          <TabsTrigger value="delayed" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                            <Clock className="w-5 h-5 text-rose-500" />
-                          </TabsTrigger>
-                          <TabsTrigger value="missed" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                            <Ban className="w-5 h-5 text-zinc-500" />
-                          </TabsTrigger>
-                          {gender === "female" && (
-                            <TabsTrigger value="menstruation" className="flex flex-col items-center justify-center h-full data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                              <Flower2 className="w-5 h-5 text-pink-500" />
-                            </TabsTrigger>
-                          )}
-                        </TabsList>
-                      </Tabs>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-
-            {isLoadingStats ? (
-              <LoadingScreen fullScreen={false} message={t("loading")} />
-            ) : statsData.length > 0 ? (
-              <div className="space-y-6">
-                <div className="p-2">
-                  {(() => {
-                    const filteredStatsData = statsData;
-                    
-                    return (
-                      <>
-                        {activeChartType === "donut" && <PrayerDonutChart data={filteredStatsData} gender={gender} />}
-                        {activeChartType === "pie" && <PrayerPieChart data={filteredStatsData} gender={gender} />}
-                        {activeChartType === "bar" && <PrayerBarChart data={statsData} activeStatus={statsStatus} gender={gender} />}
-                        {activeChartType === "stacked" && <PrayerStackedBarChart data={statsData} gender={gender} />}
-                        {activeChartType === "line" && <PrayerLineChart data={filteredStatsData} activeStatus={statsStatus} gender={gender} />}
-                        {activeChartType === "area" && <PrayerAreaChart data={filteredStatsData} activeStatus={statsStatus} gender={gender} />}
-                        {activeChartType === "radar1" && <PrayerRadarChart data={statsData} activeStatus={statsStatus} gender={gender} />}
-                        {activeChartType === "radar2" && <PrayerRadarChart2 data={statsData} activeStatus={statsStatus} gender={gender} />}
-                      </>
-                    );
-                  })()}
-                </div>
-                
-                <div className="grid grid-cols-2 gap-3">
-                  <Card className={cn(
-                    "border-none shadow-none",
-                    gender === "female" ? "bg-emerald-50/50 dark:bg-emerald-950/20" : "bg-blue-50/50 dark:bg-blue-950/20"
-                  )}>
-                    <CardContent className="p-3 flex flex-col items-center justify-center text-center">
-                      <span className={cn(
-                        "text-xl font-bold",
-                        gender === "female" ? "text-emerald-600 dark:text-emerald-400" : "text-blue-600 dark:text-blue-400"
-                      )}>
-                        {statsData.reduce((acc, curr) => acc + curr.prayed, 0)}
-                      </span>
-                      <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold">
-                        {t("status_prayed")}
-                      </span>
-                    </CardContent>
-                  </Card>
-                  {gender === "male" && (
-                    <Card className="bg-emerald-50/50 dark:bg-emerald-950/20 border-none shadow-none">
-                      <CardContent className="p-3 flex flex-col items-center justify-center text-center">
-                        <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                          {statsData.reduce((acc, curr) => acc + curr.congregation, 0)}
-                        </span>
-                        <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold">
-                          {t("status_congregation")}
-                        </span>
-                      </CardContent>
-                    </Card>
-                  )}
-                  <Card className="bg-rose-50/50 dark:bg-rose-950/20 border-none shadow-none">
-                    <CardContent className="p-3 flex flex-col items-center justify-center text-center">
-                      <span className="text-xl font-bold text-rose-600 dark:text-rose-400">
-                        {statsData.reduce((acc, curr) => acc + curr.delayed, 0)}
-                      </span>
-                      <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold">
-                        {t("status_delayed")}
-                      </span>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-zinc-100 dark:bg-zinc-950 border-none shadow-none">
-                    <CardContent className="p-3 flex flex-col items-center justify-center text-center">
-                      <span className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                        {statsData.reduce((acc, curr) => acc + curr.missed, 0)}
-                      </span>
-                      <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold">
-                        {t("status_missed")}
-                      </span>
-                    </CardContent>
-                  </Card>
-                  {gender === "female" && (
-                    <Card className="bg-pink-50/50 dark:bg-pink-950/20 border-none shadow-none">
-                      <CardContent className="p-3 flex flex-col items-center justify-center text-center">
-                        <span className="text-xl font-bold text-pink-600 dark:text-pink-400">
-                          {statsData.reduce((acc, curr) => acc + ((curr as any).menstruation || 0), 0)}
-                        </span>
-                        <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold">
-                          {t("status_menstruation")}
-                        </span>
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground space-y-4">
-                <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
-                  <BarChart2 className="w-10 h-10 text-muted" />
-                </div>
-                <p className="text-center px-8 text-sm font-medium">
-                  Статистиканы көру үшін кемінде бір күн намаз белгілеуіңіз қажет.
-                </p>
-                {user?.email === "ilyasuly.isakhan@gmail.com" && (
-                  <Button variant="outline" onClick={generateMockData} disabled={isGeneratingMock}>
-                    Тесттік деректерді жасау
-                  </Button>
-                )}
-              </div>
-            )}
           </div>
         )}
 

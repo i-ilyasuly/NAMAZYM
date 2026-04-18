@@ -9,6 +9,10 @@ interface QuranContextType {
   quranTajweedText: string;
   isTajweedEnabled: boolean;
   setIsTajweedEnabled: (v: boolean) => void;
+  fontFamily: string;
+  setFontFamily: (v: string) => void;
+  fontSizeLevel: number;
+  setFontSizeLevel: (v: number) => void;
   isPaused: boolean;
   togglePause: () => void;
   surahInfo: { id: number; name: string } | null;
@@ -47,10 +51,12 @@ const initialState = getInitialState();
 
 export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [surahNumber, setSurahNumberState] = useState(initialState?.surahNumber || 1);
-  const [level, setLevel] = useState(3);
+  const [level, setLevel] = useState(initialState?.level || 3);
   const [quranText, setQuranText] = useState("");
   const [quranTajweedText, setQuranTajweedText] = useState("");
-  const [isTajweedEnabled, setIsTajweedEnabled] = useState(false);
+  const [isTajweedEnabled, setIsTajweedEnabled] = useState(initialState?.isTajweedEnabled || false);
+  const [fontFamily, setFontFamily] = useState(initialState?.fontFamily || 'font-quran-amiri');
+  const [fontSizeLevel, setFontSizeLevel] = useState(initialState?.fontSizeLevel || 5);
   const [isPaused, setIsPaused] = useState(initialState?.isPaused || false);
   const isPausedRef = useRef(isPaused);
   const [surahInfo, setSurahInfo] = useState<{ id: number; name: string } | null>(null);
@@ -140,6 +146,10 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         surahNumber,
         isPaused,
+        level,
+        fontSizeLevel,
+        fontFamily,
+        isTajweedEnabled,
         pos: posRef.current
       }));
     };
@@ -149,7 +159,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       clearInterval(interval);
       window.removeEventListener('beforeunload', saveState);
     };
-  }, [surahNumber, isPaused]);
+  }, [surahNumber, isPaused, level, fontSizeLevel, fontFamily, isTajweedEnabled]);
 
   const handleSetTextWidth = useCallback((w: number) => {
     setTextWidth(prev => (prev === w ? prev : w));
@@ -239,25 +249,27 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           audioPlayerRef.current.addEventListener('loadedmetadata', onMetadata);
         }
 
-        // Strip API's custom wrappers to get pure texts and append a beautiful uniform bracket for both
-        const fullText = versesData.verses.map((v: any, i: number) => {
-          return `<span data-verse="${i + 1}">${v.text_uthmani.trim()} ﴿${toArabicNumber(v.verse_number || i + 1)}﴾</span>`;
-        }).join("  ");
-        
+        // Generate Tajweed Text
         const fullTajweedText = tajweedData.verses.map((v: any, i: number) => {
-          // Remove the <span class="end">1</span> tags completely
           const cleanTajweed = v.text_uthmani_tajweed.replace(/<span class=["']?end["']?>.*?<\/span>/g, '').trim();
           return `<span data-verse="${i + 1}">${cleanTajweed} ﴿${toArabicNumber(v.verse_number || i + 1)}﴾</span>`;
         }).join("  ");
-        
-        setQuranText(fullText);
+
+        // RESTORE ORIGINAL CLEAN UTHMANI
+        // This is what the reciters follow perfectly in their segments.
+        const fullPlainText = versesData.verses.map((v: any, i: number) => {
+          return `<span data-verse="${i + 1}">${v.text_uthmani} ﴿${toArabicNumber(v.verse_number || i + 1)}﴾</span>`;
+        }).join("  ");
+
+        setQuranText(fullPlainText);
         setQuranTajweedText(fullTajweedText);
         setSurahInfo({ id: infoData.chapter.id, name: infoData.chapter.name_arabic });
-        // Set a marker value for position, it will be corrected when textWidth is measured
+        // Initial Pos Reset
         if (initialPosRef.current === null) {
           posRef.current = 0;
         }
-        setTextWidth(0); 
+        // DO NOT reset textWidth to 0 here, let the ResizeObserver update it.
+        // This prevents the "disappearing text" act during surah transitions.
         isInitializedRef.current = false;
       }
     } catch (err) {
@@ -345,7 +357,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const timestamps = audioTimestampsRef.current;
       const audioIsActive = audioPlayerRef.current && !audioPlayerRef.current.paused && timestamps.length > 0 && textWidthRef.current > 0;
 
-      if (audioIsActive) {
+      if (audioIsActive && textWidthRef.current > 0) {
         const currentMs = audioPlayerRef.current!.currentTime * 1000;
         let currentVerseIndex = 0;
         let found = false;
@@ -382,13 +394,19 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           // In RTL, the text starts exactly at right edge of container and padding makes "0" center.
           // By adding a small visually pleasing offset (like shifting center slightly so we read comfortably)
           // We can just calculate the precise pixel distance from right edge
-          const dStart = textWidthRef.current - (verseEl.offsetLeft + verseEl.offsetWidth);
-          const verseVisualPosition = dStart + progress * verseEl.offsetWidth;
+          // Target visual position: distance from right edge
+          const dFromRight = textWidthRef.current - (verseEl.offsetLeft + verseEl.offsetWidth);
+          const verseVisualPosition = dFromRight + progress * verseEl.offsetWidth;
           
-          // Smoothly interpolate towards the target position so it doesn't "snap" awkwardly 
-          // if timestamps are slightly loose
           const diff = verseVisualPosition - posRef.current;
-          posRef.current += diff * 0.1; 
+          // SNAP SENSITIVITY: 10px instead of 20px. 
+          // If misalignment is more than 10px, jump immediately instead of sliding.
+          if (Math.abs(diff) > 10) {
+            posRef.current = verseVisualPosition;
+          } else {
+            // INCREASED CORRECTION SPEED
+            posRef.current += diff * 0.3; 
+          }
         }
       } else {
         // Normal constant speed scrolling
@@ -414,6 +432,8 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <QuranContext.Provider value={{
       surahNumber, setSurahNumber: setSurahNumberState, level, setLevel, 
       quranText, quranTajweedText, isTajweedEnabled, setIsTajweedEnabled, 
+      fontFamily, setFontFamily,
+      fontSizeLevel, setFontSizeLevel,
       isPaused, togglePause,
       surahInfo,
       isLoading, error, getPos: useCallback(() => posRef.current, []), setPos: useCallback((v: number) => { posRef.current = v; }, []), setIsDragging: handleSetIsDragging,

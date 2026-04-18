@@ -6,7 +6,17 @@ import { Plus, Minus, Loader2, ChevronLeft, ChevronRight, AlertCircle, Type, Pal
 import { useQuran } from '@/context/QuranContext';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
-export const QuranVerseLive: React.FC = () => {
+interface QuranVerseLiveProps {
+  onSettingsToggle?: (isOpen: boolean) => void;
+  showSettingsManaged?: boolean;
+  isSettingsOpen?: boolean;
+}
+
+export const QuranVerseLive: React.FC<QuranVerseLiveProps> = ({ 
+  onSettingsToggle,
+  showSettingsManaged = false,
+  isSettingsOpen = false
+}) => {
   const { 
     surahNumber, setSurahNumber, 
     level, setLevel, 
@@ -21,7 +31,17 @@ export const QuranVerseLive: React.FC = () => {
     reciters, reciterId, setReciterId
   } = useQuran();
   
-  const [showControls, setShowControls] = useState(false);
+  const [internalShowControls, setInternalShowControls] = useState(false);
+  const showControls = showSettingsManaged ? false : internalShowControls;
+  
+  const handleToggleSettings = useCallback(() => {
+    if (onSettingsToggle) {
+      onSettingsToggle(!isSettingsOpen);
+    } else {
+      setInternalShowControls(prev => !prev);
+    }
+  }, [onSettingsToggle, isSettingsOpen]);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(300); // Default fallback
 
@@ -44,16 +64,15 @@ export const QuranVerseLive: React.FC = () => {
   return (
     <div className="w-full mb-2 mt-1 px-4 flex flex-col items-end" ref={containerRef}>
       <div 
-        className="w-full h-16 flex items-center justify-center relative overflow-hidden group cursor-pointer select-none"
+        className="w-full h-[64px] flex items-center justify-center relative overflow-hidden group cursor-pointer select-none"
       >
         <AnimatePresence mode="wait">
           {error ? (
             <motion.div 
               key="error" 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} 
-              className="flex items-center gap-2 text-red-500 font-medium text-xs"
+              className="flex items-center gap-2 text-red-500 font-medium text-xs h-full"
             >
-              <AlertCircle className="w-4 h-4" />
               <span>Қате орын алды</span>
               <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); fetchSurah(surahNumber); }} className="h-6 px-2">Қайталау</Button>
             </motion.div>
@@ -62,30 +81,30 @@ export const QuranVerseLive: React.FC = () => {
               <Loader2 className="w-5 h-5 animate-spin text-primary/30" />
             </motion.div>
           ) : quranText ? (
-            <motion.div
-              key={`${surahNumber}-${quranText.length}`} 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 flex items-center"
-            >
-              <PersistentScroller
-                text={isTajweedEnabled ? quranTajweedText : quranText}
-                isHtml={isTajweedEnabled}
-                onComplete={nextSurah}
-                onTap={(clientX) => {
+          <motion.div
+            key={`scroller-${surahNumber}`} // ONLY change key when surah changes!
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 flex items-center"
+          >
+            <PersistentScroller
+              text={isTajweedEnabled ? quranTajweedText : quranText}
+              isHtml={true} // Now both are HTML spans
+              onComplete={nextSurah}
+              onTap={(clientX) => {
                   // Eliminate reflow cost by using fast innerWidth
                   if (clientX > window.innerWidth / 2) {
                     togglePause();
-                    setShowControls(false); // Hide settings if open
+                    setInternalShowControls(false); // Hide internal settings if open
                   } else {
-                    setShowControls(prev => !prev);
+                    handleToggleSettings();
                   }
                 }}
               />
             </motion.div>
           ) : (
-             <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-zinc-400 text-xs italic">
+            <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-zinc-400 text-xs italic">
                Аяттар жүктелуде...
              </motion.div>
           )}
@@ -106,102 +125,179 @@ export const QuranVerseLive: React.FC = () => {
         </AnimatePresence>
       </div>
 
-      <AnimatePresence>
-        {showControls && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95, y: -5 }} 
-            animate={{ opacity: 1, scale: 1, y: 0 }} 
-            exit={{ opacity: 0, scale: 0.95, y: -5 }} 
-            className="mt-1 flex items-center gap-2 z-50 w-full overflow-x-auto no-scrollbar touch-pan-x snap-x snap-mandatory"
-          >
-            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-50 dark:bg-zinc-800/10 border border-zinc-100 dark:border-zinc-800/50 shadow-sm backdrop-blur-md min-w-max snap-start">
-              <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
-                <Button 
-                  variant="ghost" 
-                  size="icon-xs" 
-                  title="Дауыстап оқу"
-                  onClick={(e) => { e.stopPropagation(); toggleAudio(); }} 
-                  className={cn(
-                    "rounded-md h-7 w-7 transition-colors shrink-0 mr-1",
-                    isPlayingAudio ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground" : "text-muted-foreground"
-                  )}
-                >
-                  {isPlayingAudio ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                </Button>
-                <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 border-l border-zinc-200 dark:border-zinc-800 pl-1.5 ml-0.5">
-                  <span className="text-[9px] font-bold text-muted-foreground uppercase shrink-0">Қари:</span>
-                  <Select value={reciterId.toString()} onValueChange={(val) => setReciterId(parseInt(val, 10))}>
-                    <SelectTrigger className="h-8 border-0 bg-transparent text-[11px] font-bold px-2 shadow-none focus:ring-0 max-w-[150px] truncate hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors flex items-center gap-1">
-                      <SelectValue placeholder="Таңдау" />
-                    </SelectTrigger>
-                    <SelectContent align="start" className="min-w-[220px] p-1 rounded-2xl border-zinc-200 dark:border-zinc-800 shadow-2xl backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95">
-                      {reciters && reciters.length > 0 ? (
-                        reciters.map(r => (
-                          <SelectItem key={r.id} value={r.id.toString()} className="py-3 px-4 text-sm cursor-pointer rounded-xl focus:bg-primary transition-all focus:text-primary-foreground mb-1 last:mb-0">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="font-bold text-sm tracking-tight">{r.translated_name?.name || r.reciter_name}</span>
-                              <div className="flex items-center gap-1.5">
-                                {r.style && (
-                                  <span className="text-[9px] px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 opacity-70 uppercase font-black tracking-widest">
-                                    {r.style}
-                                  </span>
-                                )}
-                                <span className="text-[9px] opacity-40 uppercase font-bold">Орындаушы</span>
-                              </div>
-                            </div>
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="7" className="py-4 px-5 text-sm font-bold">Mishary Rashid Alafasy</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800 shrink-0">
-                <Button 
-                  variant="ghost" 
-                  size="icon-xs" 
-                  title="Тәджуид"
-                  onClick={(e) => { e.stopPropagation(); setIsTajweedEnabled(!isTajweedEnabled); }} 
-                  className={cn(
-                    "rounded-md h-7 w-7 transition-colors",
-                    isTajweedEnabled ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground" : "text-muted-foreground"
-                  )}
-                >
-                  <Palette className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-              <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
-                <Button variant="ghost" size="icon-xs" onClick={(e) => { e.stopPropagation(); prevSurah(); }} className="rounded-md h-7 w-7"><ChevronLeft className="w-3.5 h-3.5" /></Button>
-                <div className="min-w-[80px] px-2 text-center flex flex-col items-center justify-center">
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase leading-none mb-0.5">Сүре {surahNumber}</span>
-                  <span className="text-[10px] font-arabic font-bold leading-none truncate max-w-[70px] text-center">{surahInfo?.name}</span>
-                </div>
-                <Button variant="ghost" size="icon-xs" onClick={(e) => { e.stopPropagation(); nextSurah(); }} className="rounded-md h-7 w-7"><ChevronRight className="w-3.5 h-3.5" /></Button>
-              </div>
-              <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
-                <Button 
-                  variant="ghost" 
-                  size="icon-xs" 
-                  disabled={isPlayingAudio}
-                  onClick={(e) => { e.stopPropagation(); setLevel(Math.max(level - 1, 1)); }} 
-                  className="rounded-md h-7 w-7 disabled:opacity-30 disabled:cursor-not-allowed"
-                ><Minus className="w-3.5 h-3.5" /></Button>
-                <div className={cn("min-w-[32px] text-center font-mono font-bold text-xs", isPlayingAudio && "opacity-50")}>{level}</div>
-                <Button 
-                  variant="ghost" 
-                  size="icon-xs" 
-                  disabled={isPlayingAudio}
-                  onClick={(e) => { e.stopPropagation(); setLevel(Math.min(level + 1, 10)); }} 
-                  className="rounded-md h-7 w-7 disabled:opacity-30 disabled:cursor-not-allowed"
-                ><Plus className="w-3.5 h-3.5" /></Button>
-              </div>
+      {!showSettingsManaged && (
+        <AnimatePresence>
+          {internalShowControls && (
+            <div className="w-full mt-1">
+              <QuranSettings />
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
+      )}
     </div>
+  );
+};
+
+export const QuranSettings: React.FC<{ onClose?: () => void }> = ({ onClose }) => {
+  const { 
+    surahNumber, setSurahNumber, 
+    level, setLevel, 
+    isTajweedEnabled, setIsTajweedEnabled,
+    fontFamily, setFontFamily,
+    fontSizeLevel, setFontSizeLevel,
+    surahInfo, 
+    nextSurah, prevSurah,
+    isPlayingAudio, toggleAudio,
+    reciters, reciterId, setReciterId
+  } = useQuran();
+
+  const fonts = [
+    { id: 'font-quran-uthmanic', name: 'Uthmanic (Official)' },
+    { id: 'font-quran-indopak', name: 'IndoPak (Official)' },
+    { id: 'font-quran-kfgqpc', name: 'KFGQPC (Authentic)' },
+    { id: 'font-quran-amiri', name: 'Amiri (Classic)' },
+    { id: 'font-quran-scheherazade', name: 'Scheherazade (Modern)' },
+    { id: 'font-quran-lateef', name: 'Lateef (Elegant)' },
+    { id: 'font-quran-noto', name: 'Noto Naskh (Standard)' }
+  ];
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.95, y: -5 }} 
+      animate={{ opacity: 1, scale: 1, y: 0 }} 
+      exit={{ opacity: 0, scale: 0.95, y: -5 }} 
+      className="flex items-center gap-2 z-50 w-full overflow-x-auto no-scrollbar touch-pan-x snap-x snap-mandatory relative h-[44px]"
+    >
+      <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-50 dark:bg-zinc-800/20 border border-zinc-100 dark:border-zinc-800/50 shadow-sm backdrop-blur-md min-w-max snap-start h-full">
+        <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
+          <Button 
+            variant="ghost" 
+            size="icon-xs" 
+            title="Дауыстап оқу"
+            onClick={(e) => { e.stopPropagation(); toggleAudio(); }} 
+            className={cn(
+              "rounded-md h-7 w-7 transition-colors shrink-0 mr-1",
+              isPlayingAudio ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground" : "text-muted-foreground"
+            )}
+          >
+            {isPlayingAudio ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+          </Button>
+          <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 border-l border-zinc-200 dark:border-zinc-800 pl-1.5 ml-0.5">
+            <span className="text-[9px] font-bold text-muted-foreground uppercase shrink-0">Қари:</span>
+            <Select value={reciterId.toString()} onValueChange={(val) => setReciterId(parseInt(val, 10))}>
+              <SelectTrigger className="h-8 border-0 bg-transparent text-[11px] font-bold px-2 shadow-none focus:ring-0 max-w-[150px] truncate hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors flex items-center gap-1">
+                <SelectValue placeholder="Таңдау" />
+              </SelectTrigger>
+              <SelectContent align="start" className="min-w-[220px] p-1 rounded-2xl border-zinc-200 dark:border-zinc-800 shadow-2xl backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95">
+                {reciters && reciters.length > 0 ? (
+                  reciters.map(r => (
+                    <SelectItem key={r.id} value={r.id.toString()} className="py-3 px-4 text-sm cursor-pointer rounded-xl focus:bg-primary transition-all focus:text-primary-foreground mb-1 last:mb-0">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-bold text-sm tracking-tight">{r.translated_name?.name || r.reciter_name}</span>
+                        <div className="flex items-center gap-1.5">
+                          {r.style && (
+                            <span className="text-[9px] px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 opacity-70 uppercase font-black tracking-widest">
+                              {r.style}
+                            </span>
+                          )}
+                          <span className="text-[9px] opacity-40 uppercase font-bold">Орындаушы</span>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="7" className="py-4 px-5 text-sm font-bold">Mishary Rashid Alafasy</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Font Family Control */}
+        <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
+          <Type className="w-3 h-3 text-muted-foreground ml-1.5" />
+          <Select value={fontFamily} onValueChange={(val) => setFontFamily(val)}>
+            <SelectTrigger className="h-8 border-0 bg-transparent text-[10px] font-bold px-2 shadow-none focus:ring-0 w-[120px] truncate hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors flex items-center gap-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start" className="min-w-[180px] p-1 rounded-2xl border-zinc-200 dark:border-zinc-800 shadow-2xl backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95">
+              {fonts.map(f => (
+                <SelectItem key={f.id} value={f.id} className="py-2.5 px-4 text-xs cursor-pointer rounded-xl focus:bg-primary transition-all focus:text-primary-foreground mb-1 last:mb-0">
+                  <span className={cn(f.id, "text-base")}>{f.name}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800 shrink-0">
+          <Button 
+            variant="ghost" 
+            size="icon-xs" 
+            title="Тәджуид"
+            disabled={isPlayingAudio}
+            onClick={(e) => { e.stopPropagation(); setIsTajweedEnabled(!isTajweedEnabled); }} 
+            className={cn(
+              "rounded-md h-7 w-7 transition-colors",
+              isTajweedEnabled ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground" : "text-muted-foreground",
+              isPlayingAudio && "opacity-20 cursor-not-allowed grayscale"
+            )}
+          >
+            <Palette className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+        <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
+          <Button variant="ghost" size="icon-xs" onClick={(e) => { e.stopPropagation(); prevSurah(); }} className="rounded-md h-7 w-7"><ChevronLeft className="w-3.5 h-3.5" /></Button>
+          <div className="min-w-[80px] px-2 text-center flex flex-col items-center justify-center">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase leading-none mb-0.5">Сүре {surahNumber}</span>
+            <span className="text-[10px] font-arabic font-bold leading-none truncate max-w-[70px] text-center">{surahInfo?.name}</span>
+          </div>
+          <Button variant="ghost" size="icon-xs" onClick={(e) => { e.stopPropagation(); nextSurah(); }} className="rounded-md h-7 w-7"><ChevronRight className="w-3.5 h-3.5" /></Button>
+        </div>
+        
+        {/* Speed Control */}
+        <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
+          <Button 
+            variant="ghost" 
+            size="icon-xs" 
+            disabled={isPlayingAudio}
+            onClick={(e) => { e.stopPropagation(); setLevel(Math.max(level - 1, 1)); }} 
+            className="rounded-md h-7 w-7 disabled:opacity-30 disabled:cursor-not-allowed"
+          ><Minus className="w-3.5 h-3.5" /></Button>
+          <div className="flex flex-col items-center justify-center min-w-[32px]">
+            <span className="text-[7px] font-black uppercase text-muted-foreground leading-none mb-0.5">Speed</span>
+            <div className={cn("text-center font-mono font-bold text-[10px] leading-none", isPlayingAudio && "opacity-50")}>{level}</div>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon-xs" 
+            disabled={isPlayingAudio}
+            onClick={(e) => { e.stopPropagation(); setLevel(Math.min(level + 1, 10)); }} 
+            className="rounded-md h-7 w-7 disabled:opacity-30 disabled:cursor-not-allowed"
+          ><Plus className="w-3.5 h-3.5" /></Button>
+        </div>
+
+        {/* Font Size Control */}
+        <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
+          <Button 
+            variant="ghost" 
+            size="icon-xs" 
+            onClick={(e) => { e.stopPropagation(); setFontSizeLevel(Math.max(fontSizeLevel - 1, 1)); }} 
+            className="rounded-md h-7 w-7"
+          ><Minus className="w-3.5 h-3.5" /></Button>
+          <div className="flex flex-col items-center justify-center min-w-[32px]">
+            <span className="text-[7px] font-black uppercase text-muted-foreground leading-none mb-0.5 flex flex-nowrap whitespace-nowrap">Font Size</span>
+            <div className="text-center font-mono font-bold text-[10px] leading-none">{fontSizeLevel}</div>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon-xs" 
+            onClick={(e) => { e.stopPropagation(); setFontSizeLevel(Math.min(fontSizeLevel + 1, 5)); }} 
+            className="rounded-md h-7 w-7"
+          ><Plus className="w-3.5 h-3.5" /></Button>
+        </div>
+      </div>
+    </motion.div>
   );
 };
 
@@ -212,7 +308,8 @@ const HeavyTajweedText = React.memo<{ text: string, isHtml?: boolean }>(({ text,
 
 // Since we know text is huge, we ONLY update it when strictly necessary
 const PureTajweed = React.memo<{ text: string, isHtml?: boolean }>(({ text, isHtml }) => {
-  return <span dangerouslySetInnerHTML={{ __html: text }} />;
+  // Use a simple span to avoid any extra block-level layout shifts
+  return <span dangerouslySetInnerHTML={{ __html: text }} className="inline-block" />;
 });
 
 const PersistentScroller: React.FC<{
@@ -221,9 +318,28 @@ const PersistentScroller: React.FC<{
   onComplete?: () => void;
   onTap?: (clientX: number) => void;
 }> = ({ text, isHtml, onComplete, onTap }) => {
-  const { getPos, setPos, setIsDragging, setTextWidth, textWidth: globalTextWidth, togglePause } = useQuran();
+  const { 
+    getPos, setPos, setIsDragging, setTextWidth, textWidth: globalTextWidth, togglePause,
+    isTajweedEnabled, fontSizeLevel, fontFamily
+  } = useQuran();
+
+  // Mapping level 1-5 to size classes
+  // Level 5: text-4xl md:text-5xl
+  // Level 4: text-3xl md:text-4xl
+  // Level 3: text-2xl md:text-3xl
+  // Level 2: text-xl md:text-2xl
+  // Level 1: text-lg md:text-xl
+  const sizeClass = useMemo(() => {
+    switch (fontSizeLevel) {
+      case 1: return "text-lg md:text-xl";
+      case 2: return "text-xl md:text-2xl";
+      case 3: return "text-2xl md:text-3xl";
+      case 4: return "text-3xl md:text-4xl";
+      case 5: default: return "text-4xl md:text-5xl";
+    }
+  }, [fontSizeLevel]);
+
   const textRef = useRef<HTMLDivElement>(null);
-  const viewRef1 = useRef<HTMLDivElement>(null);
   const viewRef2 = useRef<HTMLDivElement>(null);
   
   const dragState = useRef({ isDragging: false, startX: 0, startPos: 0, hasMoved: false });
@@ -284,7 +400,6 @@ const PersistentScroller: React.FC<{
     let rAF: number;
     const loop = () => {
       const pos = getPos();
-      if (viewRef1.current) viewRef1.current.style.transform = `translateX(${pos}px)`;
       if (viewRef2.current) viewRef2.current.style.transform = `translateX(${pos}px)`;
       rAF = requestAnimationFrame(loop);
     };
@@ -294,7 +409,7 @@ const PersistentScroller: React.FC<{
 
   return (
     <div 
-      className="relative w-full h-full flex items-center overflow-hidden touch-pan-y cursor-grab active:cursor-grabbing" 
+      className="relative w-full h-full flex items-center pt-4 pb-4 overflow-hidden touch-pan-y cursor-grab active:cursor-grabbing" 
       dir="rtl"
       onPointerDown={e => handleStart(e.clientX)}
       onPointerMove={e => handleMove(e.clientX)}
@@ -316,32 +431,19 @@ const PersistentScroller: React.FC<{
       */}
       <div 
         id="quran-measurement-layer"
-        className="absolute opacity-0 pointer-events-none whitespace-nowrap font-arabic text-4xl md:text-5xl leading-loose py-4"
+        className={cn(
+          "absolute opacity-0 pointer-events-none whitespace-nowrap leading-none pt-4 pb-4",
+          fontFamily,
+          sizeClass,
+          isTajweedEnabled && "tajweed-active"
+        )}
         ref={textRef}
       >
-        <PureTajweed text={text} isHtml={isHtml} />
+        <PureTajweed text={text} isHtml={true} />
       </div>
 
       {/* 
-        LAYER 1: Gray Backdrop (Moving) 
-        anchored right-0. Since it's RTL, anchoring right-0 puts the start of text on the right edge.
-        px-[50vw] pushes the text exactly to the center of the screen at pos=0.
-      */}
-      <div 
-        className={cn(
-          "absolute right-0 flex flex-nowrap items-center h-full will-change-transform z-10 pointer-events-none",
-          isHtml && "grayscale opacity-40 transition-opacity duration-300 tajweed-mute"
-        )}
-        ref={viewRef1}
-      >
-        <span className="whitespace-nowrap font-arabic text-4xl md:text-5xl leading-loose py-4 text-zinc-400 dark:text-zinc-600/50 px-[50vw]">
-          <PureTajweed text={text} isHtml={isHtml} />
-        </span>
-      </div>
-
-      {/* 
-        LAYER 2: Black Highlight (Moving, but Masked heavily)
-        Masked so ONLY the center is visible.
+        MAIN VISIBLE LAYER
       */}
       <div 
         className="absolute inset-0 z-20 pointer-events-none"
@@ -353,13 +455,17 @@ const PersistentScroller: React.FC<{
         <div 
            className={cn(
              "absolute right-0 flex flex-nowrap items-center h-full will-change-transform pointer-events-none",
-             isHtml && "tajweed-active"
+             isTajweedEnabled && "tajweed-active"
            )}
            ref={viewRef2}
         >
-          <span className="whitespace-nowrap font-arabic text-4xl md:text-5xl leading-loose py-4 text-zinc-900 dark:text-zinc-100 px-[50vw]">
-            <PureTajweed text={text} isHtml={isHtml} />
-          </span>
+          <div className={cn(
+            "whitespace-nowrap leading-none pt-4 pb-4 text-zinc-900 dark:text-zinc-100 px-[50vw]",
+            fontFamily,
+            sizeClass
+          )}>
+            <PureTajweed text={text} isHtml={true} />
+          </div>
         </div>
       </div>
     </div>
