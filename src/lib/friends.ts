@@ -36,18 +36,21 @@ export async function searchUsers(searchQuery: string): Promise<UserProfile[]> {
   // Search in username_lower (new field) and username (old field, for backward compatibility)
   const qUsernameLower = query(
     usersRef, 
+    where("isPrivate", "==", false),
     where("username_lower", ">=", normalizedUsername),
     where("username_lower", "<=", normalizedUsername + '\uf8ff')
   );
   
   const qUsernameOriginal = query(
     usersRef, 
+    where("isPrivate", "==", false),
     where("username", ">=", normalizedUsername),
     where("username", "<=", normalizedUsername + '\uf8ff')
   );
 
   const qEmail = query(
     usersRef, 
+    where("isPrivate", "==", false),
     where("email", ">=", queryLower),
     where("email", "<=", queryLower + '\uf8ff')
   );

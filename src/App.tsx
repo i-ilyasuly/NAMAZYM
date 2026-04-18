@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, onSnapshot, setDoc, serverTimestamp, getDoc, collection, query, where, getDocs, limit, orderBy, writeBatch, deleteDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, serverTimestamp, getDoc, collection, query, where, getDocs, limit, orderBy, writeBatch, deleteDoc, getDocFromServer } from "firebase/firestore";
 import { format, subDays, startOfDay, startOfWeek, endOfWeek, eachDayOfInterval, addDays, isSameDay, startOfMonth, endOfMonth, addMonths, subMonths, isSameMonth } from "date-fns";
 import { kk, ru } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
@@ -25,6 +25,7 @@ import { LocationSearchScreen } from "./components/LocationSearchScreen";
 import { LoadingScreen } from "./components/LoadingScreen";
 import { AnalyticsScreen } from "./components/AnalyticsScreen";
 import { CommunityScreen } from "./components/CommunityScreen";
+import { QuranVerseLive } from "./components/QuranVerseLive";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import {
   Drawer,
@@ -205,7 +206,17 @@ function SettingsItem({
   );
 }
 
+import { QuranProvider } from "./context/QuranContext";
+
 export default function App() {
+  return (
+    <QuranProvider>
+      <AppContent />
+    </QuranProvider>
+  );
+}
+
+function AppContent() {
   const { t, i18n } = useTranslation();
   const {
     user,
@@ -292,6 +303,22 @@ export default function App() {
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [usernameError, setUsernameError] = useState("");
   const [isSavingSetup, setIsSavingSetup] = useState(false);
+
+  // Telegram WebApp Integration
+  useEffect(() => {
+    // @ts-ignore
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      
+      // Sync with Telegram theme colors if possible
+      const tgTheme = tg.themeParams;
+      if (tgTheme.bg_color) {
+        document.documentElement.style.setProperty('--tg-theme-bg-color', tgTheme.bg_color);
+      }
+    }
+  }, []);
 
   const statsNeedsRefresh = useRef(false);
   const lastFetchedPeriod = useRef<number | null>(null);
@@ -467,7 +494,7 @@ export default function App() {
           if (data.isPrivate !== undefined) setIsPrivate(data.isPrivate);
         }
       } catch (error) {
-        console.error("Error fetching user profile:", error);
+        console.error("Error fetching user profile (profile fetcher):", error instanceof Error ? error.message : error);
       }
     };
     
@@ -697,7 +724,12 @@ export default function App() {
   const fetchLeaderboard = async () => {
     setIsLoadingLeaderboard(true);
     try {
-      const q = query(collection(db, "users"), orderBy("lastNI", "desc"), limit(50));
+      const q = query(
+        collection(db, "users"), 
+        where("isPrivate", "==", false),
+        orderBy("lastNI", "desc"), 
+        limit(50)
+      );
       const snap = await getDocs(q);
       setLeaderboardUsers(snap.docs.map(d => d.data()));
     } catch (error) {
@@ -807,11 +839,13 @@ export default function App() {
       );
       
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        const records: Record<string, PrayerRecord> = { ...weeklyRecords };
-        snapshot.docs.forEach(doc => {
-          records[doc.id] = doc.data() as PrayerRecord;
+        setWeeklyRecords(prev => {
+          const records = { ...prev };
+          snapshot.docs.forEach(doc => {
+            records[doc.id] = doc.data() as PrayerRecord;
+          });
+          return records;
         });
-        setWeeklyRecords(records);
       });
       
       return () => unsubscribe();
@@ -1034,6 +1068,17 @@ export default function App() {
 
   // Auth Listener
   useEffect(() => {
+    async function testConnection() {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Firestore connection test failed: the client is offline. This might indicate an incorrect Firebase configuration.");
+        }
+      }
+    }
+    testConnection();
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthReady(true); // Unblock UI immediately
@@ -1055,26 +1100,55 @@ export default function App() {
                 setGender(data.gender);
               }
               
-              // Update last login
-              await setDoc(userRef, {
+              // Update last login and Telegram info if available
+              // @ts-ignore
+              const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+              const tgData: any = {
+                uid: currentUser.uid,
                 displayName: currentUser.displayName,
                 email: currentUser.email,
                 photoURL: currentUser.photoURL,
-                lastLogin: serverTimestamp()
-              }, { merge: true });
+                lastLogin: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              };
+
+              if (tgUser) {
+                tgData.telegramId = tgUser.id;
+                tgData.telegramUser = tgUser.username;
+              }
+
+              await setDoc(userRef, tgData, { merge: true });
             } else {
               // Brand new user
               setGender(null);
-              await setDoc(userRef, {
-                displayName: currentUser.displayName,
+              // @ts-ignore
+              const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+              const initialUsername = tgUser?.username 
+                ? `@${tgUser.username}` 
+                : "@user" + currentUser.uid.slice(-4);
+
+              const newUserData: any = {
+                uid: currentUser.uid,
+                displayName: currentUser.displayName || tgUser?.first_name,
                 email: currentUser.email,
                 photoURL: currentUser.photoURL,
+                username: initialUsername,
+                username_lower: initialUsername.toLowerCase(),
+                isPrivate: false,
                 createdAt: serverTimestamp(),
-                lastLogin: serverTimestamp()
-              });
+                lastLogin: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              };
+
+              if (tgUser) {
+                newUserData.telegramId = tgUser.id;
+                newUserData.telegramUser = tgUser.username;
+              }
+
+              await setDoc(userRef, newUserData);
             }
           } catch (error) {
-            console.error("Error in auth state change:", error);
+            console.error("Error in auth state change document fetch:", error instanceof Error ? error.message : error);
           } finally {
             setIsCheckingGender(false);
           }
@@ -1249,7 +1323,12 @@ export default function App() {
       if (hasChanges) {
         const docRef = doc(db, "users", user.uid, "prayer_records", currentRecord.date);
         try {
-          await setDoc(docRef, { ...updates, updatedAt: serverTimestamp() }, { merge: true });
+          // Include essential fields to satisfy security rules (uid, date and other statuses)
+          await setDoc(docRef, { 
+            ...currentRecord, 
+            ...updates, 
+            updatedAt: serverTimestamp() 
+          }, { merge: true });
         } catch (e) {
           console.error("Auto-missed update failed", e);
         }
@@ -1341,13 +1420,15 @@ export default function App() {
     
     try {
       const userRef = doc(db, "users", user.uid);
+      const lowerUsername = cleanUsername.toLowerCase();
+      
       await setDoc(userRef, {
         uid: user.uid,
         email: user.email,
         displayName: user.displayName,
         photoURL: user.photoURL,
         username: cleanUsername,
-        username_lower: cleanUsername,
+        username_lower: lowerUsername,
         bio: tempBio,
         gender: gender,
         updatedAt: serverTimestamp()
@@ -1598,7 +1679,7 @@ export default function App() {
       const formattedUsername = `@${lowerUsername}`;
       await setDoc(doc(db, "users", user.uid), {
         username: formattedUsername,
-        username_lower: formattedUsername,
+        username_lower: formattedUsername.toLowerCase(),
         updatedAt: serverTimestamp()
       }, { merge: true });
       
@@ -1956,10 +2037,12 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full pt-4 pb-32">
+            <QuranVerseLive />
+
+            <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full px-4 md:px-0 pt-4 pb-32">
               <LayoutGroup>
-                <div className="bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl overflow-hidden shadow-sm">
-                  <div className="flex flex-col">
+                <div className="bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl shadow-sm relative">
+                  <div className="flex flex-col relative">
                     {!prayerTimes
                       ? Array.from({ length: 5 }).map((_, i) => (
                           <Skeleton key={i} className="h-[64px] w-full border-b border-zinc-100 dark:border-zinc-800/50 last:border-0" />
@@ -1968,9 +2051,22 @@ export default function App() {
                       const isExpanded = expandedPrayerId === prayer.id;
                       const status = (currentRecord?.[prayer.id as keyof PrayerRecord] as PrayerStatus) || "none";
                       
+                      const getHistoryForPrayer = (prayerId: string): PrayerStatus[] => {
+                        const history: PrayerStatus[] = [];
+                        // We use the selected date as the end point for the 7-day history
+                        const baseDate = new Date(selectedDate);
+                        for (let i = 6; i >= 0; i--) {
+                          const d = subDays(baseDate, i);
+                          const dateStr = format(d, "yyyy-MM-dd");
+                          const record = weeklyRecords[dateStr];
+                          history.push((record?.[prayerId as keyof PrayerRecord] as PrayerStatus) || "none");
+                        }
+                        return history;
+                      };
+
                       return (
-                        <div key={prayer.id} className={cn(
-                          "flex flex-col border-b border-zinc-100 dark:border-zinc-800/50 last:border-0 transition-colors duration-300",
+                        <div key={prayer.id} style={{ zIndex: 10 - index }} className={cn(
+                          "flex flex-col border-b border-zinc-100 dark:border-zinc-800/50 last:border-0 transition-colors duration-300 relative",
                           isExpanded && "bg-zinc-50/50 dark:bg-zinc-800/20"
                         )}>
                           <PrayerCard
@@ -1980,8 +2076,14 @@ export default function App() {
                             status={status}
                             gender={gender}
                             noCard={true}
-                            onClick={() => {
+                            history={getHistoryForPrayer(prayer.id)}
+                            onClick={(e) => {
+                              if (e) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }
                               if (prayer.isPseudo) return;
+                              
                               if (isExpanded) {
                                 setExpandedPrayerId(null);
                                 setExpansionStep("status");
@@ -2339,7 +2441,7 @@ export default function App() {
             </div>
 
             {calendarView === "weekly" ? (
-              <div className="bg-card rounded-2xl border border-muted/40 shadow-sm p-4 flex flex-col items-center w-full max-w-4xl mx-auto">
+              <div className="bg-card rounded-2xl border border-muted/40 shadow-sm p-4 flex flex-col items-center w-full max-w-md mx-auto">
                 <div className="flex justify-between items-center w-full mb-4 px-2">
                   <Button 
                     variant="outline" 
@@ -2434,28 +2536,8 @@ export default function App() {
 
                                   const currentRank = getStatusRank(status);
                                   
-                                  // 2. Check for "Drop" in the entire week for this specific prayer
-                                  // If there's any day where quality decreased, all lines for this prayer in this week disappear.
-                                  const hasWeeklyDrop = (() => {
-                                    const weekStart = startOfWeek(calendarWeekStart, { weekStartsOn: 1 });
-                                    let lastRank = -1;
-                                    
-                                    for (let d = 0; d < 7; d++) {
-                                      const dStr = format(addDays(weekStart, d), "yyyy-MM-dd");
-                                      const r = weeklyRecords[dStr];
-                                      const s = r ? (r[prayerId as keyof PrayerRecord] as PrayerStatus) : "none";
-                                      const rnk = getStatusRank(s);
-                                      
-                                      if (rnk > 0) {
-                                        if (lastRank !== -1 && rnk < lastRank) return true; // Drop detected!
-                                        lastRank = rnk;
-                                      }
-                                    }
-                                    return false;
-                                  })();
-
                                   const hasNextLine = (() => {
-                                    if (hasWeeklyDrop || currentRank === 0 || i >= 6) return false;
+                                    if (currentRank === 0 || i >= 6) return false;
                                     
                                     const nextDay = addDays(day, 1);
                                     const nextDateStr = format(nextDay, "yyyy-MM-dd");
@@ -2464,11 +2546,11 @@ export default function App() {
                                     const nextRank = getStatusRank(nextStatus);
                                     
                                     // Line exists if next day is better or equal
-                                    return nextRank >= currentRank;
+                                    return nextRank >= currentRank && nextRank > 0;
                                   })();
 
                                   const hasPrevLine = (() => {
-                                    if (hasWeeklyDrop || currentRank === 0 || i <= 0) return false;
+                                    if (currentRank === 0 || i <= 0) return false;
                                     
                                     const prevDay = subDays(day, 1);
                                     const prevDateStr = format(prevDay, "yyyy-MM-dd");
@@ -2488,7 +2570,7 @@ export default function App() {
                                           transition={{ duration: 0.5, delay: idx * 0.1 }}
                                           style={{ originX: 0 }}
                                           className={cn(
-                                            "absolute left-1/2 top-1/2 -translate-y-1/2 w-[48px] h-[2px] z-0 opacity-60",
+                                            "absolute left-1/2 top-1/2 -translate-y-1/2 w-[48px] sm:w-[54px] h-[2px] z-0 opacity-40",
                                             dotColor
                                           )} 
                                         />
@@ -3346,7 +3428,12 @@ export default function App() {
               onClick={async () => {
                 setGender("male");
                 if (user) {
-                  await setDoc(doc(db, "users", user.uid), { gender: "male" }, { merge: true });
+                  await setDoc(doc(db, "users", user.uid), { 
+                    uid: user.uid,
+                    email: user.email,
+                    gender: "male",
+                    updatedAt: serverTimestamp()
+                  }, { merge: true });
                 }
               }}
             >
@@ -3361,7 +3448,12 @@ export default function App() {
               onClick={async () => {
                 setGender("female");
                 if (user) {
-                  await setDoc(doc(db, "users", user.uid), { gender: "female" }, { merge: true });
+                  await setDoc(doc(db, "users", user.uid), { 
+                    uid: user.uid,
+                    email: user.email,
+                    gender: "female",
+                    updatedAt: serverTimestamp()
+                  }, { merge: true });
                 }
               }}
             >

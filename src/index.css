@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Amiri:wght@400;700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -8,6 +8,7 @@
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+    --font-arabic: "Amiri", serif;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -143,4 +144,30 @@
   .tv-lightweight-charts table tr:last-child td:first-child a {
     display: none !important;
   }
+}
+
+/* 
+  Global Tajweed Colors 
+  Must be outside @layer to guarantee compilation and persistence globally
+*/
+tajweed { 
+  display: inline; 
+}
+.tajweed-active tajweed[class="ghunnah"], .tajweed-active tajweed.ghunnah { color: #ff7e1e !important; }
+.tajweed-active tajweed[class="ikhafa"], .tajweed-active tajweed.ikhafa { color: #9400a8 !important; }
+.tajweed-active tajweed[class^="idghaam"], .tajweed-active tajweed.idghaam, .tajweed-active tajweed.idghaam_no_ghunnah, .tajweed-active tajweed.idghaam_mutajaanisayn, .tajweed-active tajweed.idghaam_mutaqaaribayn { color: #169777 !important; }
+.tajweed-active tajweed[class="iqlab"], .tajweed-active tajweed.iqlab { color: #26bffd !important; }
+.tajweed-active tajweed[class="qalqalah"], .tajweed-active tajweed.qalqalah { color: #dd0008 !important; }
+.tajweed-active tajweed[class="madda_normal"], .tajweed-active tajweed.madda_normal { color: #537ce6 !important; }
+.tajweed-active tajweed[class="madda_permissible"], .tajweed-active tajweed.madda_permissible { color: #4050ff !important; }
+.tajweed-active tajweed[class="madda_necessary"], .tajweed-active tajweed.madda_necessary { color: #8a0726 !important; }
+.tajweed-active tajweed[class="madda_obligatory"], .tajweed-active tajweed.madda_obligatory { color: #2144c1 !important; }
+.tajweed-active tajweed[class="qasr_muttasil"], .tajweed-active tajweed.qasr_muttasil { color: #2144c1 !important; }
+.tajweed-active tajweed[class="slnt"], .tajweed-active tajweed.slnt { color: #aaaaaa !important; }
+.tajweed-active tajweed[class="ham_wasl"], .tajweed-active tajweed.ham_wasl { color: #aaaaaa !important; }
+.tajweed-active tajweed[class="laam_shamsiyah"], .tajweed-active tajweed.laam_shamsiyah { color: #aaaaaa !important; }
+
+/* The background layer strips tajweed colors so only the focus point is vibrant */
+.tajweed-mute tajweed {
+  color: inherit !important;
 }

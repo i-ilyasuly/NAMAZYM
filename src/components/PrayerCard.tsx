@@ -27,11 +27,12 @@ interface PrayerCardProps {
   time: string;
   status: PrayerStatus;
   gender?: string;
-  onClick: () => void;
+  onClick: (e?: React.MouseEvent) => void;
   noCard?: boolean;
+  history?: PrayerStatus[];
 }
 
-export function PrayerCard({
+export const PrayerCard = React.memo(function PrayerCard({
   id,
   name,
   time,
@@ -39,6 +40,7 @@ export function PrayerCard({
   gender,
   onClick,
   noCard = false,
+  history = [],
 }: PrayerCardProps) {
   const { t } = useTranslation();
 
@@ -132,9 +134,42 @@ export function PrayerCard({
     }
   };
 
+  const getStatusRank = (s: PrayerStatus | "none"): number => {
+    switch (s) {
+      case "congregation": return 4;
+      case "prayed": return 3;
+      case "delayed": return 2;
+      case "missed": return 1;
+      case "menstruation": return 1;
+      default: return 0;
+    }
+  };
+
+  const getDotColor = (s: PrayerStatus | "none", g?: string) => {
+    switch (s) {
+      case "prayed": return g === "female" ? "bg-emerald-500" : "bg-blue-500";
+      case "congregation": return "bg-emerald-500";
+      case "delayed": return "bg-rose-500";
+      case "missed": return "bg-zinc-900 dark:bg-zinc-100";
+      case "menstruation": return "bg-pink-500";
+      default: return "bg-zinc-200 dark:bg-zinc-800";
+    }
+  };
+
+  const getLineColor = (s: PrayerStatus | "none", g?: string) => {
+    switch (s) {
+      case "prayed": return g === "female" ? "bg-emerald-500/60" : "bg-blue-500/60";
+      case "congregation": return "bg-emerald-500/60";
+      case "delayed": return "bg-rose-500/60";
+      case "missed": return "bg-zinc-900/40 dark:bg-zinc-100/40";
+      case "menstruation": return "bg-pink-500/60";
+      default: return "bg-zinc-200/50 dark:bg-zinc-800/50";
+    }
+  };
+
   const content = (
-    <div className="flex flex-row items-center justify-between py-3 px-4">
-      <div className="flex items-center gap-3">
+    <div className="flex flex-row items-center justify-between py-3 px-3 sm:px-4 gap-2">
+      <div className="flex items-center gap-2.5 sm:gap-3 w-[100px] sm:w-[130px] shrink-0">
         <div
           className={cn(
             "w-9 h-9 flex items-center justify-center transition-all duration-300 shrink-0 group-hover:scale-110 relative",
@@ -160,7 +195,43 @@ export function PrayerCard({
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      {id !== "sunrise" && history.length > 0 && (
+        <div className="flex flex-1 items-center justify-center max-w-[120px] sm:max-w-[160px] opacity-90 transition-opacity">
+          <div className="flex items-center w-full">
+             {history.map((s, idx) => {
+                const currentRank = getStatusRank(s);
+                const nextStatus = idx < history.length - 1 ? history[idx + 1] : "none";
+                const nextRank = getStatusRank(nextStatus);
+                const isGood = currentRank >= 3 || s === "menstruation";
+                const nextIsGood = nextRank >= 3 || nextStatus === "menstruation";
+
+                const isConnectedHorizontally = isGood && nextIsGood;
+                
+                return (
+                  <React.Fragment key={idx}>
+                    <div className="relative flex items-center justify-center z-10 w-1.5 sm:w-2">
+                      <div 
+                        className={cn(
+                          "w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full shrink-0 shadow-sm transition-transform duration-300 relative z-10", 
+                          isConnectedHorizontally && "scale-110",
+                          s === "none" && isPast() && idx === history.length - 1 ? "bg-amber-400 animate-pulse" : getDotColor(s, gender)
+                        )} 
+                      />
+                    </div>
+                    {idx < history.length - 1 && (
+                      <div className={cn(
+                        "flex-1 h-[2px] mx-[-2px] sm:mx-[-1px] shrink-0 z-0", 
+                        isConnectedHorizontally ? getLineColor(nextStatus, gender) : "opacity-0"
+                      )} />
+                    )}
+                  </React.Fragment>
+                );
+             })}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-end gap-2 sm:gap-3 shrink-0 sm:w-[130px]">
         {id !== "sunrise" && status !== "none" && (
           <span className={cn("text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline-block opacity-80", config.color)}>
             {config.label}
@@ -205,4 +276,13 @@ export function PrayerCard({
       {content}
     </Card>
   );
-}
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.id === nextProps.id &&
+    prevProps.status === nextProps.status &&
+    prevProps.time === nextProps.time &&
+    prevProps.noCard === nextProps.noCard &&
+    prevProps.gender === nextProps.gender &&
+    JSON.stringify(prevProps.history) === JSON.stringify(nextProps.history)
+  );
+});

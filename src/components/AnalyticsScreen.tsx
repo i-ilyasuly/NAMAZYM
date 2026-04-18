@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType, IChartApi, ISeriesApi, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers, BaselineSeries } from 'lightweight-charts';
 import { useStore } from '../store';
-import { collection, query, orderBy, limit, onSnapshot, writeBatch, doc, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, writeBatch, doc, getDocs, limitToLast } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from './ui/button';
@@ -45,7 +45,9 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
     showChartVolume,
     setShowChartVolume,
     chartType,
-    setChartType
+    setChartType,
+    chartTimeframe,
+    setChartTimeframe
   } = useStore();
 
   // Settings & Legend State
@@ -57,10 +59,10 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    // Fetch prayer records directly to guarantee sync with calendar
     const q = query(
       collection(db, "users", auth.currentUser.uid, "prayer_records"),
-      orderBy("date", "asc")
+      orderBy("date", "asc"),
+      limitToLast(180)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -70,7 +72,9 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
       let totalMissed = 0;
       const map: Record<string, any> = {};
       
-      const data = records.map(record => {
+      const allDataPoints: any[] = [];
+      
+      records.forEach(record => {
         map[record.date] = record;
         
         // Calculate missed count for this day
@@ -82,25 +86,80 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
           }
         });
 
-        // Calculate score on the fly
+        // Calculate score
         const aggregationInput = prepareAggregationInput(record, gender || 'male');
         const dayScore = aggregateDayScore(aggregationInput, prevClose);
-        prevClose = dayScore.candle.close;
+        
+        if (chartTimeframe === '1D') {
+          allDataPoints.push({
+            time: record.date,
+            open: dayScore.candle.open,
+            high: dayScore.candle.high,
+            low: dayScore.candle.low,
+            close: dayScore.candle.close,
+            value: dayScore.candle.close,
+            missedCount: missedCount,
+            volumeColor: missedCount > 0 ? '#ef5350' : 'transparent'
+          });
+          prevClose = dayScore.candle.close;
+        } else {
+          // Expanded Intraday Points (1H, 15M, etc)
+          // We define approximate times for each prayer to show intraday movement
+          const timings = [
+            { id: 'fajr', h: 5, m: 0 },
+            { id: 'dhuhr', h: 13, m: 0 },
+            { id: 'asr', h: 17, m: 0 },
+            { id: 'maghrib', h: 19, m: 30 },
+            { id: 'isha', h: 21, m: 0 }
+          ];
 
-        return {
-          time: record.date,
-          open: dayScore.candle.open,
-          high: dayScore.candle.high,
-          low: dayScore.candle.low,
-          close: dayScore.candle.close,
-          value: dayScore.candle.close, // For BaselineSeries
-          missedCount: missedCount, // For Volume
-          volumeColor: missedCount > 0 ? '#ef5350' : 'transparent'
-        };
+          let runningNI = prevClose;
+          const [yr, mon, day] = record.date.split('-').map(Number);
+
+          timings.forEach(t => {
+            const score = aggregationInput.prayers[t.id as keyof typeof aggregationInput.prayers] || 0;
+            const open = runningNI;
+            runningNI += score;
+            
+            // Baseline and Candle logic for intraday
+            const timestamp = Math.floor(new Date(yr, mon - 1, day, t.h, t.m).getTime() / 1000);
+            
+            allDataPoints.push({
+              time: timestamp,
+              open: open,
+              high: Math.max(open, runningNI),
+              low: Math.min(open, runningNI),
+              close: runningNI,
+              value: runningNI,
+              missedCount: record[t.id] === 'missed' ? 1 : 0,
+              volumeColor: record[t.id] === 'missed' ? '#ef5350' : 'transparent'
+            });
+          });
+
+          // Final point of the day includes sunnah bonuses
+          const sunnahBonus = dayScore.daily_summary.total_np - runningNI;
+          if (Math.abs(sunnahBonus) > 0.1) {
+             const lastOpen = runningNI;
+             runningNI += sunnahBonus;
+             const endTimestamp = Math.floor(new Date(yr, mon - 1, day, 23, 50).getTime() / 1000);
+             allDataPoints.push({
+               time: endTimestamp,
+               open: lastOpen,
+               high: Math.max(lastOpen, runningNI),
+               low: Math.min(lastOpen, runningNI),
+               close: runningNI,
+               value: runningNI,
+               missedCount: 0,
+               volumeColor: 'transparent'
+             });
+          }
+
+          prevClose = runningNI;
+        }
       });
 
-      // Take only the last 30 days for the chart to keep it clean, but we calculated all to get correct prevClose
-      const chartDataSubset = data.slice(-30);
+      // Filter subset
+      const chartDataSubset = chartTimeframe === '1D' ? allDataPoints.slice(-30) : allDataPoints.slice(-150);
 
       setTotalQaza(totalMissed);
       setPrayerRecordsMap(map);
@@ -109,7 +168,7 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
     });
 
     return () => unsubscribe();
-  }, [gender]);
+  }, [gender, chartTimeframe]);
 
   // 2. Initialize Chart
   useEffect(() => {
@@ -256,16 +315,21 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
         return;
       }
 
-      const dateStr = param.time as string;
-      const score = data.value.toFixed(1);
+      const dateStr = typeof param.time === 'string' 
+        ? param.time 
+        : format(new Date((param.time as number) * 1000), 'yyyy-MM-dd HH:mm');
+      
+      const closeValue = data.close !== undefined ? data.close : data.value;
+      const score = (closeValue !== undefined && closeValue !== null) ? closeValue.toFixed(1) : '0.0';
+        
       const qaza = volData ? volData.value : 0;
 
       tooltipRef.current.style.display = 'block';
       tooltipRef.current.innerHTML = `
         <div style="font-size: 12px; font-weight: 600; margin-bottom: 4px; color: ${isDarkMode ? '#fff' : '#000'}">${dateStr}</div>
         <div style="display: flex; justify-content: space-between; gap: 16px; font-size: 11px;">
-          <span style="color: #71717a">Ұпай:</span>
-          <span style="font-weight: 500; color: ${data.value >= 50 ? '#10b981' : '#f43f5e'}">${score}</span>
+          <span style="color: #71717a">Ұпай (NI):</span>
+          <span style="font-weight: 500; color: ${Number(score) >= 50 ? '#10b981' : '#f43f5e'}">${score}</span>
         </div>
         <div style="display: flex; justify-content: space-between; gap: 16px; font-size: 11px; margin-top: 2px;">
           <span style="color: #71717a">Қаза:</span>
@@ -302,7 +366,7 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
       resizeObserver.disconnect();
       chart.remove();
     };
-  }, [isDarkMode, showChartPriceLine, chartType]);
+  }, [isDarkMode, showChartPriceLine, chartType, showChartVolume]);
 
   // 3. Update Data
   useEffect(() => {
@@ -328,7 +392,7 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
       if (volumeSeriesRef.current) {
         const volumeData = showChartVolume ? chartData.map(d => ({
           time: d.time,
-          value: d.value,
+          value: d.missedCount,
           color: d.volumeColor
         })) : [];
         volumeSeriesRef.current.setData(volumeData);
@@ -476,36 +540,65 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
         {/* Chart Container */}
         <div ref={chartContainerRef} className="w-full flex-1 [&_a]:hidden relative">
           {/* TradingView Style Legend */}
-          <div className="absolute top-2 left-3 z-10 flex flex-col pointer-events-none">
-            <div className="flex items-center gap-2">
+          <div className="absolute top-2 left-3 z-30 flex flex-col pointer-events-none">
+            <div className="flex items-center gap-2 pointer-events-auto">
               <span className="font-bold text-sm">Namaz Points</span>
-              <span className="text-xs text-muted-foreground">1D</span>
+              <div className="flex bg-muted/80 p-0.5 rounded-lg border backdrop-blur-md shadow-sm">
+                {(['1M', '15M', '1H', '1D'] as const).map(tf => (
+                  <button
+                    key={tf}
+                    onClick={() => setChartTimeframe(tf)}
+                    className={cn(
+                      "px-2 py-0.5 text-[9px] font-bold rounded-md transition-all uppercase",
+                      chartTimeframe === tf 
+                        ? "bg-background text-primary shadow-sm" 
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {tf}
+                  </button>
+                ))}
+              </div>
             </div>
             {(() => {
               const dataToShow = legendData || (chartData.length > 0 ? chartData[chartData.length - 1] : null);
               if (!dataToShow) return null;
 
               const currentIndex = chartData.findIndex(d => d.time === dataToShow.time);
-              const prevClose = currentIndex > 0 ? chartData[currentIndex - 1].close : dataToShow.open;
-              const diff = dataToShow.close - prevClose;
-              const percent = prevClose !== 0 ? (diff / prevClose) * 100 : 0;
+              
+              // Normalize values (handle Baseline vs Candlestick)
+              const close = dataToShow.close !== undefined ? dataToShow.close : dataToShow.value;
+              const open = dataToShow.open !== undefined ? dataToShow.open : (currentIndex > 0 ? chartData[currentIndex - 1].close : close);
+              const high = dataToShow.high !== undefined ? dataToShow.high : Math.max(open, close);
+              const low = dataToShow.low !== undefined ? dataToShow.low : Math.min(open, close);
+
+              const prevPoint = currentIndex > 0 ? chartData[currentIndex - 1] : null;
+              const prevClose = prevPoint ? (prevPoint.close !== undefined ? prevPoint.close : prevPoint.value) : open;
+              
+              const diff = (close !== undefined && prevClose !== undefined) ? close - prevClose : 0;
+              const percent = (prevClose !== 0 && prevClose !== undefined) ? (diff / prevClose) * 100 : 0;
               const isPositive = diff >= 0;
+
+              const safeToFixed = (val: any, dec: number = 2) => {
+                if (val === undefined || val === null || isNaN(val)) return "0.00";
+                return val.toFixed(dec);
+              };
 
               return (
                 <>
                   <div className="flex items-baseline gap-2">
                     <span className={cn("text-lg font-bold", isPositive ? "text-emerald-500" : "text-red-500")}>
-                      {dataToShow.close.toFixed(2)}
+                      {safeToFixed(close)}
                     </span>
                     <span className={cn("text-sm", isPositive ? "text-emerald-500" : "text-red-500")}>
-                      {isPositive ? "+" : ""}{diff.toFixed(2)} ({isPositive ? "+" : ""}{percent.toFixed(2)}%)
+                      {isPositive ? "+" : ""}{safeToFixed(diff)} ({isPositive ? "+" : ""}{safeToFixed(percent)}%)
                     </span>
                   </div>
                   <div className="flex gap-2 text-[10px] text-muted-foreground mt-0.5">
-                    <span>O<span className={dataToShow.open >= prevClose ? "text-emerald-500" : "text-red-500"}>{dataToShow.open.toFixed(2)}</span></span>
-                    <span>H<span className={dataToShow.high >= prevClose ? "text-emerald-500" : "text-red-500"}>{dataToShow.high.toFixed(2)}</span></span>
-                    <span>L<span className={dataToShow.low >= prevClose ? "text-emerald-500" : "text-red-500"}>{dataToShow.low.toFixed(2)}</span></span>
-                    <span>C<span className={dataToShow.close >= prevClose ? "text-emerald-500" : "text-red-500"}>{dataToShow.close.toFixed(2)}</span></span>
+                    <span>O<span className={open >= prevClose ? "text-emerald-500" : "text-red-500"}>{safeToFixed(open)}</span></span>
+                    <span>H<span className={high >= prevClose ? "text-emerald-500" : "text-red-500"}>{safeToFixed(high)}</span></span>
+                    <span>L<span className={low >= prevClose ? "text-emerald-500" : "text-red-500"}>{safeToFixed(low)}</span></span>
+                    <span>C<span className={close >= prevClose ? "text-emerald-500" : "text-red-500"}>{safeToFixed(close)}</span></span>
                   </div>
                   {prayerRecordsMap[dataToShow.time] && (
                     <div className="flex flex-wrap gap-1 text-[9px] mt-1">

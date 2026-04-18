@@ -113,6 +113,9 @@ interface AppState {
   chartType: "baseline" | "candlestick" | "realtime";
   setChartType: (type: "baseline" | "candlestick" | "realtime") => void;
 
+  chartTimeframe: "1M" | "15M" | "1H" | "1D";
+  setChartTimeframe: (tf: "1M" | "15M" | "1H" | "1D") => void;
+
   // NP Engine / Analytics Data
   dailyScores: Record<string, any>; // { [date]: DayAggregationOutput }
   setDailyScore: (date: string, score: any) => void;
@@ -182,6 +185,9 @@ export const useStore = create<AppState>()(
 
       chartType: "baseline",
       setChartType: (chartType) => set({ chartType }),
+
+      chartTimeframe: "1D",
+      setChartTimeframe: (chartTimeframe) => set({ chartTimeframe }),
 
       dailyScores: {},
       setDailyScore: (date, score) => set((state) => ({

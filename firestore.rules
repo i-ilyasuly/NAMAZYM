@@ -59,29 +59,30 @@ service cloud.firestore {
 
     function isValidPrayerRecord() {
       let data = request.resource.data;
-      return hasRequiredFields(['uid', 'date', 'fajr', 'dhuhr', 'asr', 'maghrib', 'isha', 'updatedAt']) &&
+      return hasRequiredFields(['uid', 'date', 'updatedAt']) &&
              data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
              isValidDateString(data.date) &&
-             isValidPrayerStatus(data.fajr) &&
-             isValidPrayerStatus(data.dhuhr) &&
-             isValidPrayerStatus(data.asr) &&
-             isValidPrayerStatus(data.maghrib) &&
-             isValidPrayerStatus(data.isha) &&
+             (!('fajr' in data) || isValidPrayerStatus(data.fajr)) &&
+             (!('dhuhr' in data) || isValidPrayerStatus(data.dhuhr)) &&
+             (!('asr' in data) || isValidPrayerStatus(data.asr)) &&
+             (!('maghrib' in data) || isValidPrayerStatus(data.maghrib)) &&
+             (!('isha' in data) || isValidPrayerStatus(data.isha)) &&
              data.updatedAt is timestamp;
     }
 
     function isValidUser() {
       let data = request.resource.data;
-      return hasRequiredFields(['uid', 'email', 'updatedAt']) &&
-             data.uid is string && data.email is string &&
-             (!('username' in data) || (data.username is string && data.username.size() < 50)) &&
-             (!('bio' in data) || (data.bio is string && data.bio.size() < 500)) &&
-             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
-             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 1000)) &&
-             (!('gender' in data) || (data.gender in ['male', 'female'])) &&
-             (!('lastNI' in data) || (data.lastNI is number)) &&
-             (!('createdAt' in data) || (data.createdAt is timestamp)) &&
-             (!('lastLogin' in data) || (data.lastLogin is timestamp)) &&
+      return hasRequiredFields(['uid', 'updatedAt']) &&
+             data.uid is string && 
+             (!('email' in data) || data.email == null || data.email is string) &&
+             (!('username' in data) || data.username == null || (data.username is string && data.username.size() < 50)) &&
+             (!('bio' in data) || data.bio == null || (data.bio is string && data.bio.size() < 500)) &&
+             (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 1000)) &&
+             (!('gender' in data) || data.gender == null || (data.gender in ['male', 'female'])) &&
+             (!('lastNI' in data) || data.lastNI == null || (data.lastNI is number)) &&
+             (!('createdAt' in data) || data.createdAt == null || (data.createdAt is timestamp)) &&
+             (!('lastLogin' in data) || data.lastLogin == null || (data.lastLogin is timestamp)) &&
              data.updatedAt is timestamp;
     }
 
@@ -111,12 +112,12 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && (isOwner(userId) || resource.data.isPrivate == false);
       allow create: if isOwner(userId) && isValidUser();
       allow update: if isOwner(userId) && isValidUser();
 
       match /friends/{friendId} {
-        allow read: if isAuthenticated();
+        allow read: if isAuthenticated() && (isOwner(userId) || get(/databases/$(database)/documents/users/$(userId)).data.isPrivate == false);
         allow write: if isOwner(userId) && isValidFriend();
       }
 
@@ -128,7 +129,7 @@ service cloud.firestore {
       }
 
       match /daily_scores/{dateString} {
-        allow read: if isAuthenticated();
+        allow read: if isAuthenticated() && (isOwner(userId) || get(/databases/$(database)/documents/users/$(userId)).data.isPrivate == false);
         allow write: if isOwner(userId);
       }
     }
