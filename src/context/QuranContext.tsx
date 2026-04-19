@@ -60,6 +60,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [fontSizeLevel, setFontSizeLevel] = useState(initialState?.fontSizeLevel || 5);
   const [isPaused, setIsPaused] = useState(initialState?.isPaused || false);
   const isPausedRef = useRef(isPaused);
+  const isTajweedEnabledRef = useRef(isTajweedEnabled);
   const [surahInfo, setSurahInfo] = useState<{ id: number; name: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -68,6 +69,24 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const posRef = useRef(0);
   const textWidthRef = useRef(0);
   const isDraggingRef = useRef(false);
+  const versePositionsRef = useRef<Map<number, { left: number; width: number }>>(new Map());
+
+  const rebuildVersePositionCache = useCallback(() => {
+    const layer = document.getElementById('quran-measurement-layer');
+    if (!layer) return;
+    const spans = layer.querySelectorAll('[data-verse]');
+    const map = new Map<number, { left: number; width: number }>();
+    spans.forEach(el => {
+      const num = parseInt((el as HTMLElement).getAttribute('data-verse') || '0', 10);
+      if (num > 0) {
+        map.set(num, {
+          left: (el as HTMLElement).offsetLeft,
+          width: (el as HTMLElement).offsetWidth,
+        });
+      }
+    });
+    versePositionsRef.current = map;
+  }, []);
 
   // Audio setup
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -144,6 +163,10 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [isPaused]);
 
   useEffect(() => {
+    isTajweedEnabledRef.current = isTajweedEnabled;
+  }, [isTajweedEnabled]);
+
+  useEffect(() => {
     const saveState = () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         surahNumber,
@@ -164,8 +187,15 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [surahNumber, isPaused, level, fontSizeLevel, fontFamily, isTajweedEnabled]);
 
   const handleSetTextWidth = useCallback((w: number) => {
-    setTextWidth(prev => (prev === w ? prev : w));
-  }, []);
+    setTextWidth(prev => {
+      if (prev === w) return prev;
+      // Double RAF: first for React paint, second for DOM measurement
+      requestAnimationFrame(() => {
+        requestAnimationFrame(rebuildVersePositionCache);
+      });
+      return w;
+    });
+  }, [rebuildVersePositionCache]);
 
   const handleSetIsDragging = useCallback((dragging: boolean) => {
     isDraggingRef.current = dragging;
@@ -313,6 +343,11 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!audioPlayerRef.current?.src) return;
     if (audioPlayerRef.current.paused) {
       
+      // Тәджуид қосулы болса — таза мәтінге ауысу (Perfect performance mode)
+      if (isTajweedEnabledRef.current) {
+        setIsTajweedEnabled(false);
+      }
+
       // MAGIC SYNC: Find where the scroll (posRef.current) is visually 
       // and seek the audio to that exact verse/moment!
       const currentPos = posRef.current;
@@ -379,9 +414,9 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         const currentVerseObj = timestamps[currentVerseIndex];
-        const verseEl = document.querySelector(`#quran-measurement-layer [data-verse="${currentVerseIndex + 1}"]`) as HTMLElement;
+        const cached = versePositionsRef.current.get(currentVerseIndex + 1);
         
-        if (verseEl && currentVerseObj) {
+        if (cached && currentVerseObj) {
           let progress = 0;
           if (currentMs >= currentVerseObj.timestamp_from && currentMs <= currentVerseObj.timestamp_to) {
             const duration = currentVerseObj.timestamp_to - currentVerseObj.timestamp_from;
@@ -392,31 +427,13 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             progress = 1;
           }
 
-          // Offset the progress so that the middle of the currently spoken word tends to be in the center
-          // In RTL, the text starts exactly at right edge of container and padding makes "0" center.
-          // By adding a small visually pleasing offset (like shifting center slightly so we read comfortably)
-          // We can just calculate the precise pixel distance from right edge
-          // Target visual position: distance from right edge
-          const dFromRight = textWidthRef.current - (verseEl.offsetLeft + verseEl.offsetWidth);
-          const verseVisualPosition = dFromRight + progress * verseEl.offsetWidth;
-          
           if (activeVerseIndex !== currentVerseIndex) {
             setActiveVerseIndex(currentVerseIndex);
           }
 
-          const diff = verseVisualPosition - posRef.current;
-          
-          // SMOOTH TRANSITION LOGIC
-          // If the difference is huge (> 100px), we slide it gracefully but faster.
-          // If small, we use a very smooth damping.
-          const absDiff = Math.abs(diff);
-          if (absDiff > 100) {
-            posRef.current += diff * 0.15; // Graceful catch-up
-          } else if (absDiff > 0.1) {
-            // MEDITATIVE FLOW:
-            // Slower correction (0.08) creates a "floaty" feel that follows the voice
-            posRef.current += diff * 0.08; 
-          }
+          // DIRECT CALCULATION — Using cached values for zero-jank scrolling
+          const dFromRight = textWidthRef.current - (cached.left + cached.width);
+          posRef.current = dFromRight + progress * cached.width;
         }
       } else {
         // Normal constant speed scrolling

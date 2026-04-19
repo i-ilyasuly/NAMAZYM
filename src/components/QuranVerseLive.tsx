@@ -396,7 +396,7 @@ const PersistentScroller: React.FC<{
     if (el.offsetWidth > 0) setTextWidth(el.offsetWidth);
     
     return () => ro.disconnect();
-  }, [measureText, text, setTextWidth]);
+  }, [measureText, setTextWidth]);
 
   // Apply position to physical DOM refs locally (bypassing React render at 60fps)
   useEffect(() => {
