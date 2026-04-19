@@ -204,7 +204,8 @@ function AppContent() {
     chartType,
     setChartType,
     isPrivate,
-    setIsPrivate
+    setIsPrivate,
+    isQuranImmersive
   } = useStore();
 
   // Force refresh if method changed to 2 (ҚМДБ)
@@ -1805,7 +1806,10 @@ function AppContent() {
       </Dialog>
 
       {activeTab === "home" && isDarkMode && isStarrySky && <NightSky />}
-      <main className="flex-1 flex flex-col max-w-full mx-auto w-full p-4 pt-6 overflow-y-auto custom-scrollbar border-x border-muted/10">
+      <main className={cn(
+        "flex-1 flex flex-col max-w-full mx-auto w-full overflow-y-auto custom-scrollbar border-x border-muted/10",
+        activeTab === "quran" ? "p-0" : "p-4 pt-6"
+      )}>
         {activeTab === "home" && (
           <div className="flex flex-col flex-1">
             <div className="space-y-2 relative">
@@ -2426,7 +2430,9 @@ function AppContent() {
         )}
       </main>
 
-      <BottomNav activeTab={activeTab} onChange={setActiveTab} />
+      {!(activeTab === "quran" && isQuranImmersive) && (
+        <BottomNav activeTab={activeTab} onChange={setActiveTab} />
+      )}
 
       {/* Logout Confirmation Dialog */}
       <AlertDialog

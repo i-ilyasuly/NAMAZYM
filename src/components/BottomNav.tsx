@@ -18,6 +18,7 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
     { id: 'analytics', icon: Activity, label: 'NI' },
     { id: 'community', icon: Users, label: 'Достар' },
     { id: 'statistics', icon: BarChart2, label: t('statistics') },
+    { id: 'settings', icon: Settings, label: t('settings') },
   ] as const;
 
   return (

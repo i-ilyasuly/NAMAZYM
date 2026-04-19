@@ -1,5 +1,189 @@
-import React, { useState, useEffect } from 'react';
+// Import statements at the top
+import React, { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, Search, Loader2, Bookmark, BookmarkCheck, Minus, Plus, Type } from 'lucide-react';
+
+function ImageOverlay({ activePage, setActivePage, selectedChapter, toggleBookmark, quranBookmark, setIsQuranImmersive, isQuranImmersive }: any) {
+  const [scale, setScale] = useState(1);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [ayahBoxes, setAyahBoxes] = useState<Record<string, any[]>>({});
+  const pressTimer = useRef<any>(null);
+  const touchStart = useRef<number | null>(null);
+  const hasLongPressed = useRef(false);
+
+  useEffect(() => {
+    fetch('/ayahinfo.json').then(r => r.json()).then(setAyahBoxes).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (containerRef.current) {
+        setScale(containerRef.current.clientWidth / 1260);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    setTimeout(handleResize, 100);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [activePage]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStart.current = e.targetTouches[0].clientX;
+    hasLongPressed.current = false;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStart.current === null) return;
+    const endX = e.changedTouches[0].clientX;
+    const distance = touchStart.current - endX;
+    touchStart.current = null;
+    
+    // Swipe left (finger moves left) -> Prev page (since RTL, prev page is to the right)
+    if (distance > 50) {
+      if (activePage > 1) {
+        setActivePage(activePage - 1);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+    // Swipe right (finger moves right) -> Next page (since RTL, next page is to the left)
+    else if (distance < -50) {
+      if (activePage < 604) {
+        setActivePage(activePage + 1);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    } else if (Math.abs(distance) < 10) {
+      // Tap (toggle immersive) only if we didn't just fire a long press
+      if (hasLongPressed.current) {
+        hasLongPressed.current = false;
+      } else {
+        setIsQuranImmersive(!isQuranImmersive);
+      }
+    }
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    // Handling tap for desktop/mouse users
+    if (hasLongPressed.current) {
+      hasLongPressed.current = false;
+    } else {
+      setIsQuranImmersive(!isQuranImmersive);
+    }
+  };
+
+  const pageStr = String(activePage).padStart(3, '0');
+  const imageUrl = `https://android.quran.com/data/width_1260/page${pageStr}.png`;
+
+  const pageAyahs: { key: string; boxes: any[] }[] = [];
+  Object.keys(ayahBoxes).forEach(key => {
+    const boxes = ayahBoxes[key].filter((b: any) => b.page === activePage);
+    if (boxes.length > 0) pageAyahs.push({ key, boxes });
+  });
+
+  return (
+    <div className="flex flex-col items-center w-full relative h-full">
+      <div 
+        ref={containerRef} 
+        className="relative w-full max-w-[1260px] mx-auto bg-white select-none touch-pan-y"
+        style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onClick={handleClick}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <img 
+          src={imageUrl} 
+          alt={`Page ${activePage}`} 
+          className="w-full h-auto block pointer-events-none" 
+          onLoad={() => {
+            if (containerRef.current) setScale(containerRef.current.clientWidth / 1260);
+          }}
+        />
+        <div className="absolute top-0 left-0 w-full h-full">
+          {pageAyahs.map(ayah => {
+            const [cIdStr, vIdStr] = ayah.key.split(':');
+            const cId = parseInt(cIdStr);
+            const vId = parseInt(vIdStr);
+            const isBookmarked = quranBookmark?.chapterId === cId && quranBookmark?.verseId === vId;
+            
+            return ayah.boxes.map((box, idx) => (
+              <button
+                key={`${ayah.key}-${idx}`}
+                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onTouchStart={(e) => {
+                  hasLongPressed.current = false;
+                  pressTimer.current = setTimeout(() => {
+                    hasLongPressed.current = true;
+                    toggleBookmark(
+                      { id: cId, name_simple: `Chapter ${cId}` }, 
+                      { verse_number: vId }
+                    );
+                    pressTimer.current = null;
+                  }, 400);
+                }}
+                onTouchEnd={(e) => {
+                  if (pressTimer.current) {
+                    clearTimeout(pressTimer.current);
+                    pressTimer.current = null;
+                  }
+                }}
+                onTouchMove={() => {
+                  if (pressTimer.current) {
+                    clearTimeout(pressTimer.current);
+                    pressTimer.current = null;
+                  }
+                }}
+                onMouseDown={(e) => {
+                  if (e.button !== 0) return;
+                  hasLongPressed.current = false;
+                  pressTimer.current = setTimeout(() => {
+                    hasLongPressed.current = true;
+                    toggleBookmark(
+                      { id: cId, name_simple: `Chapter ${cId}` }, 
+                      { verse_number: vId }
+                    );
+                    pressTimer.current = null;
+                  }, 400);
+                }}
+                onMouseUp={() => {
+                  if (pressTimer.current) {
+                    clearTimeout(pressTimer.current);
+                    pressTimer.current = null;
+                  }
+                }}
+                onMouseLeave={() => {
+                  if (pressTimer.current) {
+                    clearTimeout(pressTimer.current);
+                    pressTimer.current = null;
+                  }
+                }}
+                onClick={(e) => {
+                  // Prevent the container's onClick from triggering if we just long pressed
+                  if (hasLongPressed.current) {
+                    e.stopPropagation();
+                  }
+                }}
+                className={cn(
+                  "absolute cursor-pointer rounded-sm hover:bg-emerald-500/20 transition-colors select-none outline-none",
+                  isBookmarked ? "bg-emerald-500/30" : "bg-transparent"
+                )}
+                style={{
+                  left: `${box.x1 * scale}px`,
+                  top: `${box.y1 * scale}px`,
+                  width: `${(box.x2 - box.x1) * scale}px`,
+                  height: `${(box.y2 - box.y1) * scale}px`,
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              />
+            ));
+          })}
+        </div>
+      </div>
+      
+      {/* Page Number Indicator */}
+      <div className="py-4 text-center">
+        <span className="text-zinc-500 font-bold">{activePage}</span>
+      </div>
+    </div>
+  );
+}
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
@@ -46,7 +230,7 @@ interface Verse {
 }
 
 export function QuranScreen() {
-  const { quranFontSize, setQuranFontSize, quranBookmark, setQuranBookmark, quranReadingMode, setQuranReadingMode } = useStore();
+  const { quranFontSize, setQuranFontSize, quranBookmark, setQuranBookmark, quranReadingMode, setQuranReadingMode, isQuranImmersive, setIsQuranImmersive } = useStore();
   const [showSettings, setShowSettings] = useState(false);
 
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -76,35 +260,33 @@ export function QuranScreen() {
     fetchChapters();
   }, []);
 
-  // Use effect to fetch reading content gracefully whenever mode/chapter/page changes.
+  // Use effect to fetch reading content gracefully whenever mode/chapter changes.
   useEffect(() => {
     if (!selectedChapter) return;
     const controller = new AbortController();
 
     const fetchContent = async () => {
-      setIsLoadingVerses(true);
-      try {
-        if (quranReadingMode === 'page') {
-          if (activePage === 0) return; // Wait for activePage to be set correctly
-          const res = await fetch(`https://api.quran.com/api/v4/verses/by_page/${activePage}?language=kk&words=true&word_fields=text_uthmani,line_number,char_type_name`, { signal: controller.signal });
-          const data = await res.json();
-          setPageVerses(data.verses);
-        } else {
+      if (quranReadingMode === 'page') {
+        // No fetch dependencies for page mode anymore. We use the background image.
+        setIsLoadingVerses(false);
+      } else {
+        setIsLoadingVerses(true);
+        try {
           // Verse mode: load the entire chapter with translations
           const res = await fetch(`https://api.quran.com/api/v4/verses/by_chapter/${selectedChapter.id}?language=kk&words=false&translations=222&fields=text_uthmani&per_page=300`, { signal: controller.signal });
           const data = await res.json();
           setChapterVerses(data.verses);
+        } catch (err: any) {
+          if (err.name !== 'AbortError') console.error('Error fetching data:', err);
+        } finally {
+          setIsLoadingVerses(false);
         }
-      } catch (err: any) {
-        if (err.name !== 'AbortError') console.error('Error fetching data:', err);
-      } finally {
-        setIsLoadingVerses(false);
       }
     };
 
     fetchContent();
     return () => controller.abort();
-  }, [selectedChapter, quranReadingMode, activePage]);
+  }, [selectedChapter, quranReadingMode]);
 
   const loadChapter = async (chapter: Chapter, verseToScroll?: number) => {
     setSelectedChapter(chapter);
@@ -165,7 +347,7 @@ export function QuranScreen() {
             className="flex flex-col h-full overflow-hidden"
           >
             {/* Header */}
-            <div className="px-6 pt-12 pb-4 bg-background z-10 sticky top-0">
+            <div className="px-6 pt-6 pb-4 bg-background z-10 sticky top-0">
               <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-zinc-100 mb-6">Қасиетті Құран</h1>
               
               <div className="relative">
@@ -244,28 +426,30 @@ export function QuranScreen() {
             className="flex flex-col h-full bg-white dark:bg-[#050505]"
           >
             {/* Reading Header */}
-            <div className="flex items-center px-4 pt-12 pb-4 bg-white/80 dark:bg-[#050505]/80 backdrop-blur-xl border-b border-zinc-100 dark:border-zinc-800/50 z-20 sticky top-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setSelectedChapter(null)}
-                className="w-10 h-10 rounded-full mr-2"
-              >
-                <ChevronLeft className="w-6 h-6" />
-              </Button>
-              <div className="flex-1 text-center">
-                <h2 className="text-lg font-bold">{selectedChapter.name_simple}</h2>
-                <p className="text-xs text-zinc-500">{selectedChapter.translated_name.name}</p>
+            {!(quranReadingMode === 'page' && isQuranImmersive) && (
+              <div className="flex items-center px-4 pt-6 pb-2 bg-white/80 dark:bg-[#050505]/80 backdrop-blur-xl border-b border-zinc-100 dark:border-zinc-800/50 z-20 sticky top-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSelectedChapter(null)}
+                  className="w-10 h-10 rounded-full mr-2"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </Button>
+                <div className="flex-1 text-center">
+                  <h2 className="text-lg font-bold">{selectedChapter.name_simple}</h2>
+                  <p className="text-xs text-zinc-500">{selectedChapter.translated_name.name}</p>
+                </div>
+                <Button
+                  variant={showSettings ? "default" : "ghost"}
+                  size="icon"
+                  onClick={() => setShowSettings(!showSettings)}
+                  className={cn("w-10 h-10 rounded-full ml-2 transition-colors", showSettings && "bg-emerald-500 hover:bg-emerald-600")}
+                >
+                  <Type className={cn("w-5 h-5", showSettings ? "text-white" : "text-zinc-600 dark:text-zinc-400")} />
+                </Button>
               </div>
-              <Button
-                variant={showSettings ? "default" : "ghost"}
-                size="icon"
-                onClick={() => setShowSettings(!showSettings)}
-                className={cn("w-10 h-10 rounded-full ml-2 transition-colors", showSettings && "bg-emerald-500 hover:bg-emerald-600")}
-              >
-                <Type className={cn("w-5 h-5", showSettings ? "text-white" : "text-zinc-600 dark:text-zinc-400")} />
-              </Button>
-            </div>
+            )}
 
             {/* Font Settings Drawer/Dropdown (Fixed below header) */}
             <AnimatePresence>
@@ -313,10 +497,10 @@ export function QuranScreen() {
             </AnimatePresence>
 
             {/* Reading Content */}
-            <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-32">
-              {/* Bismillah for surahs except 1 and 9 */}
-              {selectedChapter.bismillah_pre && selectedChapter.id !== 1 && selectedChapter.id !== 9 && (
-                <div className="py-10 text-center border-b border-zinc-100 dark:border-zinc-800/50">
+            <div className={cn("flex-1 overflow-y-auto pb-8", quranReadingMode === 'page' ? "px-0" : "px-4 sm:px-6")}>
+              {/* Bismillah for surahs except 1 and 9 (Only show in Verse mode since pages have it built-in) */}
+              {selectedChapter.bismillah_pre && selectedChapter.id !== 1 && selectedChapter.id !== 9 && quranReadingMode !== 'page' && (
+                <div className="py-6 text-center border-b border-zinc-100 dark:border-zinc-800/50">
                   <span className="font-quran-amiri text-3xl leading-loose text-zinc-900 dark:text-zinc-100">
                     بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ
                   </span>
@@ -330,107 +514,10 @@ export function QuranScreen() {
               ) : quranReadingMode === 'page' ? (
                 // PAGE MODE RENDERING
                 <div className="flex flex-col animate-in fade-in duration-500">
-                  {/* Page Navigation Top */}
-                  <div className="flex items-center justify-between py-4 mb-4 border-b border-zinc-100 dark:border-zinc-800">
-                    <Button 
-                      variant="ghost" 
-                      onClick={() => {
-                        if (activePage > selectedChapter.pages[0]) setActivePage(activePage - 1);
-                      }}
-                      disabled={activePage <= selectedChapter.pages[0]}
-                      className="text-xs"
-                    >
-                      Кескі бет
-                      <ChevronLeft className="w-4 h-4 mr-1" />
-                    </Button>
-                    <span className="text-sm font-bold text-zinc-500">{activePage}-бет</span>
-                    <Button 
-                      variant="ghost" 
-                      onClick={() => {
-                        if (activePage < selectedChapter.pages[1]) setActivePage(activePage + 1);
-                      }}
-                      disabled={activePage >= selectedChapter.pages[1]}
-                      className="text-xs"
-                    >
-                      <ChevronLeft className="w-4 h-4 ml-1 rotate-180" />
-                      Алдыңғы
-                    </Button>
-                  </div>
-
-                  {/* Arabic Text Block */}
-                  <div className="bg-[#fffdf7] dark:bg-black rounded-sm p-4 sm:p-8 shadow-md border border-zinc-200 dark:border-zinc-800 mb-8 max-w-[600px] w-full mx-auto flex flex-col justify-between min-h-[60vh]">
-                    {Array.from({ length: 15 }, (_, i) => i + 1).map((lineNum) => {
-                      const allWords = pageVerses.flatMap(v => (v.words || []).map(w => ({ ...w, verse: v })));
-                      const wordsInLine = allWords.filter(w => w.line_number === lineNum);
-
-                      if (wordsInLine.length === 0) return <div key={lineNum} className="h-0" />;
-
-                      const isBismillah = wordsInLine.some(w => w.text_uthmani.includes('بِسْمِ'));
-                      const isHeader = wordsInLine.some(w => w.char_type_name === 'surah_name');
-
-                      const isShortLine = wordsInLine.length < 5;
-                      const justifyClass = isBismillah || isHeader ? "justify-center gap-2" : isShortLine ? "justify-start gap-4" : "justify-between";
-
-                      return (
-                        <div key={lineNum} className={cn("flex flex-row-reverse items-center w-full min-h-[3em] leading-none", justifyClass)} dir="rtl">
-                          {wordsInLine.map(word => {
-                            const isEnd = word.char_type_name === 'end';
-                            const verseChapterId = parseInt(word.verse.verse_key.split(':')[0]);
-                            const isBookmarked = quranBookmark?.chapterId === verseChapterId && quranBookmark?.verseId === word.verse.verse_number;
-                            
-                            return (
-                              <button 
-                                key={word.id} 
-                                onClick={() => {
-                                  const cId = parseInt(word.verse.verse_key.split(':')[0]);
-                                  const cObj = chapters.find(c => c.id === cId) || selectedChapter;
-                                  if (cObj) toggleBookmark(cObj, word.verse);
-                                }}
-                                className={cn(
-                                  "font-quran-amiri transition-colors outline-none",
-                                  isEnd ? "text-emerald-700 dark:text-emerald-500 font-normal" : "text-zinc-900 dark:text-zinc-100 font-bold hover:text-emerald-600 dark:hover:text-emerald-400",
-                                  isBookmarked && "bg-emerald-100 dark:bg-emerald-900/40 rounded-sm"
-                                )} 
-                                style={{ fontSize: `${quranFontSize}px` }}
-                                dangerouslySetInnerHTML={{ __html: isEnd ? `&#xFD3F;${word.text_uthmani}&#xFD3E;` : word.text_uthmani }}
-                              />
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Page Navigation Bottom */}
-                  <div className="flex items-center justify-between py-6 mt-8 border-t border-zinc-100 dark:border-zinc-800">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => {
-                        if (activePage > selectedChapter.pages[0]) {
-                          setActivePage(activePage - 1);
-                          window.scrollTo({ top: 0, behavior: 'smooth' });
-                        }
-                      }}
-                      disabled={activePage <= selectedChapter.pages[0]}
-                      className="rounded-xl"
-                    >
-                      <ChevronLeft className="w-4 h-4 mr-2" />
-                      Келесі бет
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      onClick={() => {
-                        if (activePage < selectedChapter.pages[1]) {
-                          setActivePage(activePage + 1);
-                          window.scrollTo({ top: 0, behavior: 'smooth' });
-                        }
-                      }}
-                      disabled={activePage >= selectedChapter.pages[1]}
-                      className="rounded-xl"
-                    >
-                      Алдыңғы бет
-                      <ChevronLeft className="w-4 h-4 ml-2 rotate-180" />
-                    </Button>
+                  {/* Android Quran Overlay View */}
+                  <div className="flex justify-center relative max-w-[1260px] mx-auto w-full mb-0">
+                    {/* Render Image Component with dynamic ref for scale */}
+                    <ImageOverlay activePage={activePage} setActivePage={setActivePage} selectedChapter={selectedChapter} toggleBookmark={toggleBookmark} quranBookmark={quranBookmark} setIsQuranImmersive={setIsQuranImmersive} isQuranImmersive={isQuranImmersive} />
                   </div>
                 </div>
               ) : (

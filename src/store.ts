@@ -138,6 +138,8 @@ interface AppState {
   setQuranBookmark: (bookmark: { chapterId: number; verseId: number; chapterName: string; } | null) => void;
   quranReadingMode: "verse" | "page";
   setQuranReadingMode: (mode: "verse" | "page") => void;
+  isQuranImmersive: boolean;
+  setIsQuranImmersive: (isQuranImmersive: boolean) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -225,6 +227,8 @@ export const useStore = create<AppState>()(
       setQuranBookmark: (quranBookmark) => set({ quranBookmark }),
       quranReadingMode: "verse",
       setQuranReadingMode: (quranReadingMode) => set({ quranReadingMode }),
+      isQuranImmersive: false,
+      setIsQuranImmersive: (isQuranImmersive) => set({ isQuranImmersive }),
     }),
     {
       name: "app-storage",
