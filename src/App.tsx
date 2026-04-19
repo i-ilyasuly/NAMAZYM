@@ -296,10 +296,7 @@ function AppContent() {
       const selectedBtn = c.querySelector('[data-selected="true"]') as HTMLElement;
       if (!selectedBtn) return;
 
-      const containerRect = c.getBoundingClientRect();
-      const btnRect = selectedBtn.getBoundingClientRect();
-      const targetScrollLeft =
-        c.scrollLeft + (btnRect.left - containerRect.left) - (containerRect.width - btnRect.width) / 2;
+      const targetScrollLeft = selectedBtn.offsetLeft - (c.clientWidth - selectedBtn.offsetWidth) / 2;
 
       const isDateChanged = lastSelectedDate.current !== selectedDate;
       const behavior: ScrollBehavior =
@@ -1898,7 +1895,7 @@ function AppContent() {
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.98 }}
-                      className="flex overflow-x-auto no-scrollbar gap-2 snap-x snap-mandatory py-1 px-1" 
+                      className="flex overflow-x-auto no-scrollbar gap-2 snap-x snap-mandatory py-1 px-1 relative" 
                       ref={horizontalCalendarRef}
                     >
                       {(() => {
