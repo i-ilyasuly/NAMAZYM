@@ -90,6 +90,7 @@ export const QuranVerseLive: React.FC<QuranVerseLiveProps> = ({
           >
             <PersistentScroller
               text={isTajweedEnabled ? quranTajweedText : quranText}
+              measureText={quranText}
               isHtml={true} // Now both are HTML spans
               onComplete={nextSurah}
               onTap={(clientX) => {
@@ -314,13 +315,14 @@ const PureTajweed = React.memo<{ text: string, isHtml?: boolean }>(({ text, isHt
 
 const PersistentScroller: React.FC<{
   text: string;
+  measureText?: string;
   isHtml?: boolean;
   onComplete?: () => void;
   onTap?: (clientX: number) => void;
-}> = ({ text, isHtml, onComplete, onTap }) => {
+}> = ({ text, measureText, isHtml, onComplete, onTap }) => {
   const { 
     getPos, setPos, setIsDragging, setTextWidth, textWidth: globalTextWidth, togglePause,
-    isTajweedEnabled, fontSizeLevel, fontFamily
+    fontSizeLevel, fontFamily
   } = useQuran();
 
   // Mapping level 1-5 to size classes
@@ -393,7 +395,7 @@ const PersistentScroller: React.FC<{
     if (el.offsetWidth > 0) setTextWidth(el.offsetWidth);
     
     return () => ro.disconnect();
-  }, [text, setTextWidth]);
+  }, [measureText, text, setTextWidth]);
 
   // Apply position to physical DOM refs locally (bypassing React render at 60fps)
   useEffect(() => {
@@ -434,12 +436,11 @@ const PersistentScroller: React.FC<{
         className={cn(
           "absolute opacity-0 pointer-events-none whitespace-nowrap leading-none pt-4 pb-4",
           fontFamily,
-          sizeClass,
-          isTajweedEnabled && "tajweed-active"
+          sizeClass
         )}
         ref={textRef}
       >
-        <PureTajweed text={text} isHtml={true} />
+        <PureTajweed text={measureText ?? text} isHtml={true} />
       </div>
 
       {/* 
@@ -455,7 +456,7 @@ const PersistentScroller: React.FC<{
         <div 
            className={cn(
              "absolute right-0 flex flex-nowrap items-center h-full will-change-transform pointer-events-none",
-             isTajweedEnabled && "tajweed-active"
+             useQuran().isTajweedEnabled && "tajweed-active"
            )}
            ref={viewRef2}
         >
