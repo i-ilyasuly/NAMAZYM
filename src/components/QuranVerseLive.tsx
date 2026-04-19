@@ -174,10 +174,14 @@ export const QuranSettings: React.FC<{ onClose?: () => void }> = ({ onClose }) =
             variant="ghost" 
             size="icon-xs" 
             title="Дауыстап оқу"
+            disabled={isTajweedEnabled}
             onClick={(e) => { e.stopPropagation(); toggleAudio(); }} 
             className={cn(
               "rounded-md h-7 w-7 transition-colors shrink-0 mr-1",
-              isPlayingAudio ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground" : "text-muted-foreground"
+              isPlayingAudio 
+                ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground" 
+                : "text-muted-foreground",
+              isTajweedEnabled && "opacity-20 cursor-not-allowed grayscale"
             )}
           >
             {isPlayingAudio ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
