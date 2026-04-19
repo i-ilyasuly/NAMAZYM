@@ -27,7 +27,6 @@ interface QuranContextType {
   nextSurah: () => void;
   prevSurah: () => void;
   fetchSurah: (id: number) => Promise<void>;
-  activeVerseIndex: number;
   
   // Audio
   audioPlayerRef: React.MutableRefObject<HTMLAudioElement | null>;
@@ -60,33 +59,13 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [fontSizeLevel, setFontSizeLevel] = useState(initialState?.fontSizeLevel || 5);
   const [isPaused, setIsPaused] = useState(initialState?.isPaused || false);
   const isPausedRef = useRef(isPaused);
-  const isTajweedEnabledRef = useRef(isTajweedEnabled);
   const [surahInfo, setSurahInfo] = useState<{ id: number; name: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
   const [textWidth, setTextWidth] = useState(0);
-  const [activeVerseIndex, setActiveVerseIndex] = useState(-1);
   const posRef = useRef(0);
   const textWidthRef = useRef(0);
   const isDraggingRef = useRef(false);
-  const versePositionsRef = useRef<Map<number, { left: number; width: number }>>(new Map());
-
-  const rebuildVersePositionCache = useCallback(() => {
-    const layer = document.getElementById('quran-measurement-layer');
-    if (!layer) return;
-    const spans = layer.querySelectorAll('[data-verse]');
-    const map = new Map<number, { left: number; width: number }>();
-    spans.forEach(el => {
-      const num = parseInt((el as HTMLElement).getAttribute('data-verse') || '0', 10);
-      if (num > 0) {
-        map.set(num, {
-          left: (el as HTMLElement).offsetLeft,
-          width: (el as HTMLElement).offsetWidth,
-        });
-      }
-    });
-    versePositionsRef.current = map;
-  }, []);
 
   // Audio setup
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -163,10 +142,6 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [isPaused]);
 
   useEffect(() => {
-    isTajweedEnabledRef.current = isTajweedEnabled;
-  }, [isTajweedEnabled]);
-
-  useEffect(() => {
     const saveState = () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         surahNumber,
@@ -187,15 +162,8 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [surahNumber, isPaused, level, fontSizeLevel, fontFamily, isTajweedEnabled]);
 
   const handleSetTextWidth = useCallback((w: number) => {
-    setTextWidth(prev => {
-      if (prev === w) return prev;
-      // Double RAF: first for React paint, second for DOM measurement
-      requestAnimationFrame(() => {
-        requestAnimationFrame(rebuildVersePositionCache);
-      });
-      return w;
-    });
-  }, [rebuildVersePositionCache]);
+    setTextWidth(prev => (prev === w ? prev : w));
+  }, []);
 
   const handleSetIsDragging = useCallback((dragging: boolean) => {
     isDraggingRef.current = dragging;
@@ -343,11 +311,6 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!audioPlayerRef.current?.src) return;
     if (audioPlayerRef.current.paused) {
       
-      // Тәджуид қосулы болса — таза мәтінге ауысу (Perfect performance mode)
-      if (isTajweedEnabledRef.current) {
-        setIsTajweedEnabled(false);
-      }
-
       // MAGIC SYNC: Find where the scroll (posRef.current) is visually 
       // and seek the audio to that exact verse/moment!
       const currentPos = posRef.current;
@@ -414,9 +377,9 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         const currentVerseObj = timestamps[currentVerseIndex];
-        const cached = versePositionsRef.current.get(currentVerseIndex + 1);
+        const verseEl = document.querySelector(`#quran-measurement-layer [data-verse="${currentVerseIndex + 1}"]`) as HTMLElement;
         
-        if (cached && currentVerseObj) {
+        if (verseEl && currentVerseObj) {
           let progress = 0;
           if (currentMs >= currentVerseObj.timestamp_from && currentMs <= currentVerseObj.timestamp_to) {
             const duration = currentVerseObj.timestamp_to - currentVerseObj.timestamp_from;
@@ -427,13 +390,23 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             progress = 1;
           }
 
-          if (activeVerseIndex !== currentVerseIndex) {
-            setActiveVerseIndex(currentVerseIndex);
+          // Offset the progress so that the middle of the currently spoken word tends to be in the center
+          // In RTL, the text starts exactly at right edge of container and padding makes "0" center.
+          // By adding a small visually pleasing offset (like shifting center slightly so we read comfortably)
+          // We can just calculate the precise pixel distance from right edge
+          // Target visual position: distance from right edge
+          const dFromRight = textWidthRef.current - (verseEl.offsetLeft + verseEl.offsetWidth);
+          const verseVisualPosition = dFromRight + progress * verseEl.offsetWidth;
+          
+          const diff = verseVisualPosition - posRef.current;
+          // SNAP SENSITIVITY: 10px instead of 20px. 
+          // If misalignment is more than 10px, jump immediately instead of sliding.
+          if (Math.abs(diff) > 10) {
+            posRef.current = verseVisualPosition;
+          } else {
+            // INCREASED CORRECTION SPEED
+            posRef.current += diff * 0.3; 
           }
-
-          // DIRECT CALCULATION — Using cached values for zero-jank scrolling
-          const dFromRight = textWidthRef.current - (cached.left + cached.width);
-          posRef.current = dFromRight + progress * cached.width;
         }
       } else {
         // Normal constant speed scrolling
@@ -466,7 +439,6 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       isLoading, error, getPos: useCallback(() => posRef.current, []), setPos: useCallback((v: number) => { posRef.current = v; }, []), setIsDragging: handleSetIsDragging,
       textWidth, setTextWidth: handleSetTextWidth,
       pixelsPerSecond, nextSurah, prevSurah, fetchSurah,
-      activeVerseIndex,
       audioPlayerRef, isPlayingAudio, toggleAudio, audioTimestamps,
       reciters, reciterId, setReciterId
     }}>
