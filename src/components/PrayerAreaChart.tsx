@@ -4,7 +4,7 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { useTranslation } from "react-i18next"
 import { format, subDays } from "date-fns"
 import { kk } from "date-fns/locale"
-import { Sunrise, Sun, CloudSun, Sunset, Moon } from "lucide-react"
+import { getPrayerTimeIcon, PRAYER_STATUS_ICONS } from "../lib/prayerIcons";
 
 import {
   ChartContainer,
@@ -44,25 +44,30 @@ export function PrayerAreaChart({ data, activeStatus, gender }: PrayerAreaChartP
     prayed: {
       label: t("status_prayed"),
       color: gender === "female" ? "#10b981" : "#3b82f6",
+      icon: PRAYER_STATUS_ICONS.prayed,
     },
     ...(gender === "male" ? {
       congregation: {
         label: t("status_congregation"),
         color: "#10b981",
+        icon: PRAYER_STATUS_ICONS.congregation,
       }
     } : {}),
     delayed: {
       label: t("status_delayed"),
       color: "#f43f5e",
+      icon: PRAYER_STATUS_ICONS.delayed,
     },
     missed: {
       label: t("status_missed"),
       color: "#18181b",
+      icon: PRAYER_STATUS_ICONS.missed,
     },
     ...(gender === "female" ? {
       menstruation: {
         label: t("status_menstruation"),
         color: "#ec4899",
+        icon: PRAYER_STATUS_ICONS.menstruation,
       }
     } : {})
   } satisfies ChartConfig
@@ -88,20 +93,18 @@ export function PrayerAreaChart({ data, activeStatus, gender }: PrayerAreaChartP
               axisLine={false}
               tickMargin={12}
               tick={({ x, y, payload }) => {
-                const getIcon = () => {
-                  const prayerKey = payload.value.toLowerCase();
-                  if (prayerKey.includes("таң") || prayerKey.includes("fajr")) return <Sunrise className="w-5 h-5 text-amber-500" />;
-                  if (prayerKey.includes("бесін") || prayerKey.includes("dhuhr")) return <Sun className="w-5 h-5 text-orange-500" />;
-                  if (prayerKey.includes("екінті") || prayerKey.includes("asr")) return <CloudSun className="w-5 h-5 text-amber-600" />;
-                  if (prayerKey.includes("ақшам") || prayerKey.includes("maghrib")) return <Sunset className="w-5 h-5 text-indigo-400" />;
-                  if (prayerKey.includes("құптан") || prayerKey.includes("isha")) return <Moon className="w-5 h-5 text-slate-500" />;
-                  return null;
-                };
+                const prayerKey = payload.value.toLowerCase();
+                let prayerId = 'default';
+                if (prayerKey.includes("таң") || prayerKey.includes("fajr")) prayerId = 'fajr';
+                else if (prayerKey.includes("бесін") || prayerKey.includes("dhuhr")) prayerId = 'dhuhr';
+                else if (prayerKey.includes("екінті") || prayerKey.includes("asr")) prayerId = 'asr';
+                else if (prayerKey.includes("ақшам") || prayerKey.includes("maghrib")) prayerId = 'maghrib';
+                else if (prayerKey.includes("құптан") || prayerKey.includes("isha")) prayerId = 'isha';
 
                 return (
                   <foreignObject x={x - 10} y={y + 8} width={20} height={20}>
                     <div className="flex items-center justify-center w-full h-full">
-                      {getIcon()}
+                      {getPrayerTimeIcon(prayerId)}
                     </div>
                   </foreignObject>
                 );

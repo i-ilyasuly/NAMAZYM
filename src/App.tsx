@@ -284,37 +284,41 @@ function AppContent() {
   const isFirstHomeRender = useRef(true);
 
   useEffect(() => {
-    if (activeTab === "home" && horizontalCalendarRef.current) {
-      const container = horizontalCalendarRef.current;
-      
-      const performScroll = () => {
-        const selectedBtn = container.querySelector('[data-selected="true"]') as HTMLElement;
-        if (selectedBtn) {
-          const isDateChanged = lastSelectedDate.current !== selectedDate;
-          const scrollLeft = selectedBtn.offsetLeft - container.offsetWidth / 2 + selectedBtn.offsetWidth / 2;
-          
-          const behavior = (isDateChanged && !isFirstHomeRender.current) ? "smooth" : "auto";
-          
-          container.scrollTo({ left: scrollLeft, behavior });
-          
-          lastSelectedDate.current = selectedDate;
-          isFirstHomeRender.current = false;
-        }
-      };
-
-      // Try multiple times to ensure the scroll happens after layout is stable
-      const timer1 = setTimeout(performScroll, 50);
-      const timer2 = setTimeout(performScroll, 300);
-      const timer3 = setTimeout(performScroll, 1000);
-      
-      return () => {
-        clearTimeout(timer1);
-        clearTimeout(timer2);
-        clearTimeout(timer3);
-      };
-    } else {
+    if (activeTab !== "home") {
       isFirstHomeRender.current = true;
+      return;
     }
+
+    const performScroll = () => {
+      const c = horizontalCalendarRef.current;
+      if (!c || c.clientWidth === 0) return;
+
+      const selectedBtn = c.querySelector('[data-selected="true"]') as HTMLElement;
+      if (!selectedBtn) return;
+
+      const containerRect = c.getBoundingClientRect();
+      const btnRect = selectedBtn.getBoundingClientRect();
+      const targetScrollLeft =
+        c.scrollLeft + (btnRect.left - containerRect.left) - (containerRect.width - btnRect.width) / 2;
+
+      const isDateChanged = lastSelectedDate.current !== selectedDate;
+      const behavior: ScrollBehavior =
+        isDateChanged && !isFirstHomeRender.current ? "smooth" : "auto";
+
+      c.scrollTo({ left: Math.max(0, targetScrollLeft), behavior });
+      lastSelectedDate.current = selectedDate;
+      isFirstHomeRender.current = false;
+    };
+
+    let rafId = requestAnimationFrame(() => requestAnimationFrame(performScroll));
+    const timer1 = setTimeout(performScroll, 150);
+    const timer2 = setTimeout(performScroll, 600);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
   }, [activeTab, selectedDate]);
 
   const [calendarWeekStart, setCalendarWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));

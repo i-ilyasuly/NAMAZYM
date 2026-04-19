@@ -3,7 +3,7 @@
 import { Pie, PieChart, Label } from "recharts"
 import { useTranslation } from "react-i18next"
 import { useMemo } from "react"
-import { User, Users2, Clock, Ban, Flower2 } from "lucide-react"
+import { PRAYER_STATUS_ICONS } from "../lib/prayerIcons";
 
 import {
   ChartContainer,
@@ -65,30 +65,30 @@ export function PrayerDonutChart({ data, gender }: PrayerDonutChartProps) {
     prayed: {
       label: t("prayed", { defaultValue: "Уақытында" }),
       color: gender === "female" ? "#10b981" : "#3b82f6",
-      icon: User,
+      icon: PRAYER_STATUS_ICONS.prayed,
     },
     ...(gender === "male" ? {
       congregation: {
         label: t("congregation", { defaultValue: "Жамағатпен" }),
         color: "#10b981",
-        icon: Users2,
+        icon: PRAYER_STATUS_ICONS.congregation,
       }
     } : {}),
     delayed: {
       label: t("delayed", { defaultValue: "Кешіктіріліп" }),
       color: "#f43f5e",
-      icon: Clock,
+      icon: PRAYER_STATUS_ICONS.delayed,
     },
     missed: {
       label: t("missed", { defaultValue: "Қаза" }),
       color: "#18181b",
-      icon: Ban,
+      icon: PRAYER_STATUS_ICONS.missed,
     },
     ...(gender === "female" ? {
       menstruation: {
         label: t("menstruation", { defaultValue: "Ерекше күндер" }),
         color: "#ec4899",
-        icon: Flower2,
+        icon: PRAYER_STATUS_ICONS.menstruation,
       }
     } : {})
   } satisfies ChartConfig

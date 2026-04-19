@@ -1,8 +1,9 @@
 "use client"
 
-import { TrendingUp, Sunrise, Sun, CloudSun, Sunset, Moon, Clock } from "lucide-react"
+import { TrendingUp } from "lucide-react"
 import { Bar, BarChart, CartesianGrid, LabelList, XAxis } from "recharts"
 import { useTranslation } from "react-i18next"
+import { getPrayerTimeIcon } from "../lib/prayerIcons";
 
 import {
   ChartContainer,
@@ -74,22 +75,12 @@ export function PrayerBarChart({ data, activeStatus = "all", gender }: PrayerBar
               tickMargin={12}
               axisLine={false}
               tick={({ x, y, payload, index }) => {
-                const getIcon = () => {
-                  switch(index) {
-                    case 0: return <Sunrise className="w-5 h-5 text-amber-500" />;
-                    case 1: return <Sun className="w-5 h-5 text-orange-500" />;
-                    case 2: return <CloudSun className="w-5 h-5 text-amber-600" />;
-                    case 3: return <Sunset className="w-5 h-5 text-indigo-400" />;
-                    case 4: return <Moon className="w-5 h-5 text-slate-500" />;
-                    default: return <Clock className="w-5 h-5" />;
-                  }
-                }
-
+                const prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
                 return (
                   <g transform={`translate(${x - 10}, ${y + 10})`} style={{ pointerEvents: 'none' }}>
                     <foreignObject width="20" height="20">
                       <div className="flex items-center justify-center w-full h-full">
-                        {getIcon()}
+                        {getPrayerTimeIcon(prayers[index] ?? 'default')}
                       </div>
                     </foreignObject>
                   </g>

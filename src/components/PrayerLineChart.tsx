@@ -1,8 +1,9 @@
 "use client"
 
-import { TrendingUp, Sunrise, Sun, CloudSun, Sunset, Moon, Clock, User, Users2, Ban, Flower2 } from "lucide-react"
+import { TrendingUp } from "lucide-react"
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 import { useTranslation } from "react-i18next"
+import { getPrayerTimeIcon, PRAYER_STATUS_ICONS } from "../lib/prayerIcons";
 
 import {
   Card,
@@ -39,29 +40,29 @@ export function PrayerLineChart({ data, activeStatus = "all", gender }: PrayerLi
       congregation: {
         label: t("status_congregation"),
         color: "#10b981",
-        icon: Users2,
+        icon: PRAYER_STATUS_ICONS.congregation,
       }
     } : {}),
     prayed: {
       label: t("status_prayed"),
       color: gender === "female" ? "#10b981" : "#3b82f6",
-      icon: User,
+      icon: PRAYER_STATUS_ICONS.prayed,
     },
     delayed: {
       label: t("status_delayed"),
       color: "#ef4444",
-      icon: Clock,
+      icon: PRAYER_STATUS_ICONS.delayed,
     },
     missed: {
       label: t("status_missed"),
       color: "#000000",
-      icon: Ban,
+      icon: PRAYER_STATUS_ICONS.missed,
     },
     ...(gender === "female" ? {
       menstruation: {
         label: t("status_menstruation"),
         color: "#ec4899",
-        icon: Flower2,
+        icon: PRAYER_STATUS_ICONS.menstruation,
       }
     } : {}),
   } satisfies ChartConfig
@@ -86,22 +87,12 @@ export function PrayerLineChart({ data, activeStatus = "all", gender }: PrayerLi
               axisLine={false}
               tickMargin={12}
               tick={({ x, y, payload, index }) => {
-                const getIcon = () => {
-                  switch(index) {
-                    case 0: return <Sunrise className="w-5 h-5 text-amber-500" />;
-                    case 1: return <Sun className="w-5 h-5 text-orange-500" />;
-                    case 2: return <CloudSun className="w-5 h-5 text-amber-600" />;
-                    case 3: return <Sunset className="w-5 h-5 text-indigo-400" />;
-                    case 4: return <Moon className="w-5 h-5 text-slate-500" />;
-                    default: return <Clock className="w-5 h-5" />;
-                  }
-                }
-
+                const prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
                 return (
                   <g transform={`translate(${x - 10}, ${y + 10})`} style={{ pointerEvents: 'none' }}>
                     <foreignObject width="20" height="20">
                       <div className="flex items-center justify-center w-full h-full">
-                        {getIcon()}
+                        {getPrayerTimeIcon(prayers[index] ?? 'default')}
                       </div>
                     </foreignObject>
                   </g>
