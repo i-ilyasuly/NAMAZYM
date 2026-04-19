@@ -110,6 +110,7 @@ import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Sunrise,
   Sunset,
   CloudSun,
@@ -222,6 +223,7 @@ function AppContent() {
   const [tempContext, setTempContext] = useState<string[]>([]);
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
   const [showQuranSettings, setShowQuranSettings] = useState(false);
+  const [showExtraPrayerSheet, setShowExtraPrayerSheet] = useState(false);
   const [isStarrySky, setIsStarrySky] = useState(true);
   const [hijriDate, setHijriDate] = useState("");
   const [statsData, setStatsData] = useState<any[]>([]);
@@ -247,6 +249,10 @@ function AppContent() {
   useEffect(() => {
     localStorage.setItem("statisticsSubTab", statisticsSubTab);
   }, [statisticsSubTab]);
+
+  useEffect(() => {
+    setShowExtraPrayerSheet(false);
+  }, [selectedDate]);
 
   useEffect(() => {
     localStorage.setItem("statsStatus", statsStatus);
@@ -2137,165 +2143,184 @@ function AppContent() {
                         );
                       })}
                     </div>
+
+                    {/* Inline extra prayers */}
+                    <AnimatePresence>
+                      {currentRecord?.tahajjud && (
+                        <motion.div
+                          key="tahajjud-row"
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="flex items-center gap-3 px-4 py-3 border-t border-zinc-100 dark:border-zinc-800/50">
+                            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-indigo-500 text-white shrink-0">
+                              <Moon className="w-4 h-4" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-sm">Тахаджуд</p>
+                              <p className="text-[10px] text-muted-foreground">Түнгі құлшылық</p>
+                            </div>
+                            <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 rounded-xl px-1 py-0.5">
+                              <button
+                                className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                                onClick={(e) => { e.stopPropagation(); handleExtraPrayerUpdate('tahajjudRakats', Math.max(2, (currentRecord?.tahajjudRakats || 2) - 2)); }}
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <span className="text-xs font-bold w-5 text-center">{currentRecord?.tahajjudRakats || 2}</span>
+                              <button
+                                className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                                onClick={(e) => { e.stopPropagation(); handleExtraPrayerUpdate('tahajjudRakats', Math.min(12, (currentRecord?.tahajjudRakats || 2) + 2)); }}
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => handleExtraPrayerUpdate('tahajjud', false)}
+                              className="w-7 h-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                      {currentRecord?.duha && (
+                        <motion.div
+                          key="duha-row"
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="flex items-center gap-3 px-4 py-3 border-t border-zinc-100 dark:border-zinc-800/50">
+                            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-amber-500 text-white shrink-0">
+                              <Sun className="w-4 h-4" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-sm">Духа</p>
+                              <p className="text-[10px] text-muted-foreground">Сәске намазы</p>
+                            </div>
+                            <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 rounded-xl px-1 py-0.5">
+                              <button
+                                className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                                onClick={(e) => { e.stopPropagation(); handleExtraPrayerUpdate('duhaRakats', Math.max(2, (currentRecord?.duhaRakats || 2) - 2)); }}
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <span className="text-xs font-bold w-5 text-center">{currentRecord?.duhaRakats || 2}</span>
+                              <button
+                                className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                                onClick={(e) => { e.stopPropagation(); handleExtraPrayerUpdate('duhaRakats', Math.min(12, (currentRecord?.duhaRakats || 2) + 2)); }}
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => handleExtraPrayerUpdate('duha', false)}
+                              className="w-7 h-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Toggle sheet for adding extra prayers */}
+                    <div className="border-t border-zinc-100 dark:border-zinc-800/50">
+                      <button
+                        onClick={() => setShowExtraPrayerSheet(prev => !prev)}
+                        className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="h-px w-5 bg-zinc-200 dark:bg-zinc-700" />
+                          <span className="text-[9px] font-bold text-zinc-400 dark:text-zinc-600 uppercase tracking-widest">нәпіл намаздар</span>
+                          <div className="h-px w-5 bg-zinc-200 dark:bg-zinc-700" />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-semibold text-zinc-400">Қосу</span>
+                          <ChevronDown className={cn(
+                            "w-3.5 h-3.5 text-zinc-400 transition-transform duration-200",
+                            showExtraPrayerSheet && "rotate-180"
+                          )} />
+                        </div>
+                      </button>
+
+                      <AnimatePresence>
+                        {showExtraPrayerSheet && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-3 pb-3 flex flex-col gap-2">
+                              <button
+                                onClick={() => {
+                                  const isNowActive = !currentRecord?.tahajjud;
+                                  handleExtraPrayerUpdate('tahajjud', isNowActive);
+                                  if (isNowActive && !currentRecord?.tahajjudRakats) {
+                                    handleExtraPrayerUpdate('tahajjudRakats', 2);
+                                  }
+                                }}
+                                className={cn(
+                                  "flex items-center gap-3 p-3 rounded-2xl border transition-all text-left w-full",
+                                  currentRecord?.tahajjud
+                                    ? "bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30"
+                                    : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-800"
+                                )}
+                              >
+                                <div className={cn(
+                                  "w-9 h-9 rounded-xl flex items-center justify-center shrink-0",
+                                  currentRecord?.tahajjud ? "bg-indigo-500 text-white" : "bg-zinc-200 dark:bg-zinc-700 text-zinc-500"
+                                )}>
+                                  <Moon className="w-4 h-4" />
+                                </div>
+                                <div className="flex-1">
+                                  <p className="font-bold text-sm">Тахаджуд</p>
+                                  <p className="text-[10px] text-muted-foreground">Түнгі құлшылық</p>
+                                </div>
+                                {currentRecord?.tahajjud && <Check className="w-4 h-4 text-indigo-500 shrink-0" />}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const isNowActive = !currentRecord?.duha;
+                                  handleExtraPrayerUpdate('duha', isNowActive);
+                                  if (isNowActive && !currentRecord?.duhaRakats) {
+                                    handleExtraPrayerUpdate('duhaRakats', 2);
+                                  }
+                                }}
+                                className={cn(
+                                  "flex items-center gap-3 p-3 rounded-2xl border transition-all text-left w-full",
+                                  currentRecord?.duha
+                                    ? "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30"
+                                    : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-800"
+                                )}
+                              >
+                                <div className={cn(
+                                  "w-9 h-9 rounded-xl flex items-center justify-center shrink-0",
+                                  currentRecord?.duha ? "bg-amber-500 text-white" : "bg-zinc-200 dark:bg-zinc-700 text-zinc-500"
+                                )}>
+                                  <Sun className="w-4 h-4" />
+                                </div>
+                                <div className="flex-1">
+                                  <p className="font-bold text-sm">Духа</p>
+                                  <p className="text-[10px] text-muted-foreground">Сәске намазы</p>
+                                </div>
+                                {currentRecord?.duha && <Check className="w-4 h-4 text-amber-500 shrink-0" />}
+                              </button>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                   </div>
                 </LayoutGroup>
-
-                {/* Қосымша намаздар (Extra Prayers) - Bento Style */}
-                <div className="mt-6 grid grid-cols-2 gap-3">
-                  {/* Тахаджуд */}
-                  <motion.div 
-                    whileTap={{ scale: 0.98 }}
-                    className={cn(
-                      "relative p-4 rounded-3xl border transition-all duration-300 overflow-hidden group",
-                      currentRecord?.tahajjud 
-                        ? "bg-indigo-50/50 border-indigo-100 dark:bg-indigo-500/10 dark:border-indigo-500/20" 
-                        : "bg-white dark:bg-zinc-900/40 border-zinc-100 dark:border-zinc-800/50"
-                    )}
-                  >
-                    <div className="flex flex-col gap-3 relative z-10">
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
-                          <div className={cn(
-                            "w-10 h-10 rounded-2xl flex items-center justify-center transition-colors",
-                            currentRecord?.tahajjud ? "bg-indigo-500 text-white" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
-                          )}>
-                            <Moon className="w-5 h-5" />
-                          </div>
-                          {currentRecord?.tahajjud && (
-                            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-indigo-500 border-2 border-background flex items-center justify-center">
-                              <Check className="w-2.5 h-2.5 text-white" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="font-bold text-sm">Тахаджуд</h4>
-                          <p className="text-[10px] text-muted-foreground">Түнгі құлшылық</p>
-                        </div>
-                        <button
-                          onClick={() => {
-                            const isNowActive = !currentRecord?.tahajjud;
-                            handleExtraPrayerUpdate('tahajjud', isNowActive);
-                            if (isNowActive && !currentRecord?.tahajjudRakats) {
-                              handleExtraPrayerUpdate('tahajjudRakats', 2);
-                            }
-                          }}
-                          className={cn(
-                            "w-8 h-8 rounded-full flex items-center justify-center transition-all",
-                            currentRecord?.tahajjud ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/30" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
-                          )}
-                        >
-                          <Plus className={cn("w-4 h-4 transition-transform", currentRecord?.tahajjud && "rotate-45")} />
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <div className="flex items-center bg-background/50 backdrop-blur-sm rounded-xl border p-1">
-                          <button 
-                            className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleExtraPrayerUpdate('tahajjudRakats', Math.max(2, (currentRecord?.tahajjudRakats || 2) - 2));
-                            }}
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="text-xs font-bold w-6 text-center">{currentRecord?.tahajjudRakats || 2}</span>
-                          <button 
-                            className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleExtraPrayerUpdate('tahajjudRakats', Math.min(12, (currentRecord?.tahajjudRakats || 2) + 2));
-                            }}
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    {currentRecord?.tahajjud && (
-                      <motion.div 
-                        layoutId="tahajjudGlow"
-                        className="absolute -right-4 -bottom-4 w-24 h-24 bg-indigo-500/10 blur-3xl rounded-full"
-                      />
-                    )}
-                  </motion.div>
-
-                  {/* Духа */}
-                  <motion.div 
-                    whileTap={{ scale: 0.98 }}
-                    className={cn(
-                      "relative p-4 rounded-3xl border transition-all duration-300 overflow-hidden group",
-                      currentRecord?.duha 
-                        ? "bg-amber-50/50 border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/20" 
-                        : "bg-white dark:bg-zinc-900/40 border-zinc-100 dark:border-zinc-800/50"
-                    )}
-                  >
-                    <div className="flex flex-col gap-3 relative z-10">
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
-                          <div className={cn(
-                            "w-10 h-10 rounded-2xl flex items-center justify-center transition-colors",
-                            currentRecord?.duha ? "bg-amber-500 text-white" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
-                          )}>
-                            <Sun className="w-5 h-5" />
-                          </div>
-                          {currentRecord?.duha && (
-                            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 border-2 border-background flex items-center justify-center">
-                              <Check className="w-2.5 h-2.5 text-white" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="font-bold text-sm">Духа</h4>
-                          <p className="text-[10px] text-muted-foreground">Сәске намазы</p>
-                        </div>
-                        <button
-                          onClick={() => {
-                            const isNowActive = !currentRecord?.duha;
-                            handleExtraPrayerUpdate('duha', isNowActive);
-                            if (isNowActive && !currentRecord?.duhaRakats) {
-                              handleExtraPrayerUpdate('duhaRakats', 2);
-                            }
-                          }}
-                          className={cn(
-                            "w-8 h-8 rounded-full flex items-center justify-center transition-all",
-                            currentRecord?.duha ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
-                          )}
-                        >
-                          <Plus className={cn("w-4 h-4 transition-transform", currentRecord?.duha && "rotate-45")} />
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <div className="flex items-center bg-background/50 backdrop-blur-sm rounded-xl border p-1">
-                          <button 
-                            className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleExtraPrayerUpdate('duhaRakats', Math.max(2, (currentRecord?.duhaRakats || 2) - 2));
-                            }}
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="text-xs font-bold w-6 text-center">{currentRecord?.duhaRakats || 2}</span>
-                          <button 
-                            className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleExtraPrayerUpdate('duhaRakats', Math.min(12, (currentRecord?.duhaRakats || 2) + 2));
-                            }}
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    {currentRecord?.duha && (
-                      <motion.div 
-                        layoutId="duhaGlow"
-                        className="absolute -right-4 -bottom-4 w-24 h-24 bg-amber-500/10 blur-3xl rounded-full"
-                      />
-                    )}
-                  </motion.div>
-                </div>
 
                 {/* Жұма (Тек жұма күні көрінеді) */}
                 {new Date(selectedDate).getDay() === 5 && gender === "male" && (
