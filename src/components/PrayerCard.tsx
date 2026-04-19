@@ -276,13 +276,4 @@ export const PrayerCard = React.memo(function PrayerCard({
       {content}
     </Card>
   );
-}, (prevProps, nextProps) => {
-  return (
-    prevProps.id === nextProps.id &&
-    prevProps.status === nextProps.status &&
-    prevProps.time === nextProps.time &&
-    prevProps.noCard === nextProps.noCard &&
-    prevProps.gender === nextProps.gender &&
-    JSON.stringify(prevProps.history) === JSON.stringify(nextProps.history)
-  );
 });
