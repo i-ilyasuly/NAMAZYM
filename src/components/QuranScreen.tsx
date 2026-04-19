@@ -54,13 +54,11 @@ export function QuranScreen() {
   const [isLoadingChapters, setIsLoadingChapters] = useState(true);
   
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
-  const [verses, setVerses] = useState<Verse[]>([]);
+  const [chapterVerses, setChapterVerses] = useState<Verse[]>([]);
+  const [pageVerses, setPageVerses] = useState<Verse[]>([]);
   const [isLoadingVerses, setIsLoadingVerses] = useState(false);
-  
   const [activePage, setActivePage] = useState<number>(0);
-  const pagesInChapter = Array.from(new Set(verses.map(v => v.page_number))).sort((a, b) => Number(a) - Number(b));
-  const pageVerses = verses.filter(v => v.page_number === activePage);
-
+  
   const toArabicNumber = (n: number) => n.toString().replace(/\d/g, d => '٠١٢٣٤٥٦٧٨٩'[parseInt(d, 10)]);
 
   useEffect(() => {
@@ -78,40 +76,62 @@ export function QuranScreen() {
     fetchChapters();
   }, []);
 
+  // Use effect to fetch reading content gracefully whenever mode/chapter/page changes.
+  useEffect(() => {
+    if (!selectedChapter) return;
+    const controller = new AbortController();
+
+    const fetchContent = async () => {
+      setIsLoadingVerses(true);
+      try {
+        if (quranReadingMode === 'page') {
+          if (activePage === 0) return; // Wait for activePage to be set correctly
+          const res = await fetch(`https://api.quran.com/api/v4/verses/by_page/${activePage}?language=kk&words=true&word_fields=text_uthmani,line_number,char_type_name`, { signal: controller.signal });
+          const data = await res.json();
+          setPageVerses(data.verses);
+        } else {
+          // Verse mode: load the entire chapter with translations
+          const res = await fetch(`https://api.quran.com/api/v4/verses/by_chapter/${selectedChapter.id}?language=kk&words=false&translations=222&fields=text_uthmani&per_page=300`, { signal: controller.signal });
+          const data = await res.json();
+          setChapterVerses(data.verses);
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') console.error('Error fetching data:', err);
+      } finally {
+        setIsLoadingVerses(false);
+      }
+    };
+
+    fetchContent();
+    return () => controller.abort();
+  }, [selectedChapter, quranReadingMode, activePage]);
+
   const loadChapter = async (chapter: Chapter, verseToScroll?: number) => {
     setSelectedChapter(chapter);
-    setIsLoadingVerses(true);
     setShowSettings(false);
-    setVerses([]);
-    try {
-      // Use per_page=300 to fetch full chapters (longest is 286 verses)
-      const response = await fetch(`https://api.quran.com/api/v4/verses/by_chapter/${chapter.id}?language=kk&words=true&word_fields=text_uthmani,line_number,page_number&translations=222&fields=text_uthmani&per_page=300`);
-      const data = await response.json();
-      setVerses(data.verses);
-      
-      const chapterPages = Array.from(new Set((data.verses as Verse[]).map(v => v.page_number))).sort((a, b) => Number(a) - Number(b));
+    
+    let targetPage = chapter.pages[0]; // default to chapter start
 
-      if (verseToScroll) {
-        const targetVerse = data.verses.find((v: Verse) => v.verse_number === verseToScroll);
-        if (targetVerse) {
-          setActivePage(targetVerse.page_number);
+    if (verseToScroll) {
+      // If we need to scroll to a specific verse, find out what page it is on
+      try {
+        const res = await fetch(`https://api.quran.com/api/v4/verses/by_chapter/${chapter.id}?fields=page_number,verse_number&per_page=300`);
+        const data = await res.json();
+        const vInfo = data.verses.find((v: any) => v.verse_number === verseToScroll);
+        if (vInfo && vInfo.page_number) {
+          targetPage = vInfo.page_number;
         }
-        
-        if (quranReadingMode === 'verse') {
-          setTimeout(() => {
-            const el = document.getElementById(`verse-${verseToScroll}`);
-            if (el) {
-              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }, 300);
-        }
-      } else if (chapterPages.length > 0) {
-        setActivePage(chapterPages[0]);
-      }
-    } catch (error) {
-      console.error('Error fetching verses:', error);
-    } finally {
-      setIsLoadingVerses(false);
+      } catch (e) {}
+    }
+
+    setActivePage(targetPage);
+
+    // Scroll automatically if in verse mode
+    if (quranReadingMode === 'verse' && verseToScroll) {
+      setTimeout(() => {
+        const el = document.getElementById(`verse-${verseToScroll}`);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 500); // give the fetch effect time to render
     }
   };
 
@@ -315,10 +335,9 @@ export function QuranScreen() {
                     <Button 
                       variant="ghost" 
                       onClick={() => {
-                        const idx = pagesInChapter.indexOf(activePage);
-                        if (idx > 0) setActivePage(pagesInChapter[idx - 1]);
+                        if (activePage > selectedChapter.pages[0]) setActivePage(activePage - 1);
                       }}
-                      disabled={pagesInChapter.indexOf(activePage) === 0}
+                      disabled={activePage <= selectedChapter.pages[0]}
                       className="text-xs"
                     >
                       Кескі бет
@@ -328,10 +347,9 @@ export function QuranScreen() {
                     <Button 
                       variant="ghost" 
                       onClick={() => {
-                        const idx = pagesInChapter.indexOf(activePage);
-                        if (idx < pagesInChapter.length - 1) setActivePage(pagesInChapter[idx + 1]);
+                        if (activePage < selectedChapter.pages[1]) setActivePage(activePage + 1);
                       }}
-                      disabled={pagesInChapter.indexOf(activePage) === pagesInChapter.length - 1}
+                      disabled={activePage >= selectedChapter.pages[1]}
                       className="text-xs"
                     >
                       <ChevronLeft className="w-4 h-4 ml-1 rotate-180" />
@@ -342,8 +360,8 @@ export function QuranScreen() {
                   {/* Arabic Text Block */}
                   <div className="bg-[#fffdf7] dark:bg-black rounded-sm p-4 sm:p-8 shadow-md border border-zinc-200 dark:border-zinc-800 mb-8 max-w-[600px] w-full mx-auto flex flex-col justify-between min-h-[60vh]">
                     {Array.from({ length: 15 }, (_, i) => i + 1).map((lineNum) => {
-                      const allWords = verses.flatMap(v => (v.words || []).map(w => ({ ...w, verse: v })));
-                      const wordsInLine = allWords.filter(w => w.page_number === activePage && w.line_number === lineNum);
+                      const allWords = pageVerses.flatMap(v => (v.words || []).map(w => ({ ...w, verse: v })));
+                      const wordsInLine = allWords.filter(w => w.line_number === lineNum);
 
                       if (wordsInLine.length === 0) return <div key={lineNum} className="h-0" />;
 
@@ -357,18 +375,23 @@ export function QuranScreen() {
                         <div key={lineNum} className={cn("flex flex-row-reverse items-center w-full min-h-[3em] leading-none", justifyClass)} dir="rtl">
                           {wordsInLine.map(word => {
                             const isEnd = word.char_type_name === 'end';
-                            const isBookmarked = quranBookmark?.chapterId === selectedChapter.id && quranBookmark?.verseId === word.verse.verse_number;
+                            const verseChapterId = parseInt(word.verse.verse_key.split(':')[0]);
+                            const isBookmarked = quranBookmark?.chapterId === verseChapterId && quranBookmark?.verseId === word.verse.verse_number;
                             
                             return (
                               <button 
                                 key={word.id} 
-                                onClick={() => toggleBookmark(selectedChapter, word.verse)}
+                                onClick={() => {
+                                  const cId = parseInt(word.verse.verse_key.split(':')[0]);
+                                  const cObj = chapters.find(c => c.id === cId) || selectedChapter;
+                                  if (cObj) toggleBookmark(cObj, word.verse);
+                                }}
                                 className={cn(
                                   "font-quran-amiri transition-colors outline-none",
                                   isEnd ? "text-emerald-700 dark:text-emerald-500 font-normal" : "text-zinc-900 dark:text-zinc-100 font-bold hover:text-emerald-600 dark:hover:text-emerald-400",
                                   isBookmarked && "bg-emerald-100 dark:bg-emerald-900/40 rounded-sm"
                                 )} 
-                                style={{ fontSize: `clamp(18px, 5vw, 28px)` }}
+                                style={{ fontSize: `${quranFontSize}px` }}
                                 dangerouslySetInnerHTML={{ __html: isEnd ? `&#xFD3F;${word.text_uthmani}&#xFD3E;` : word.text_uthmani }}
                               />
                             );
@@ -383,13 +406,12 @@ export function QuranScreen() {
                     <Button 
                       variant="outline" 
                       onClick={() => {
-                        const idx = pagesInChapter.indexOf(activePage);
-                        if (idx > 0) {
-                          setActivePage(pagesInChapter[idx - 1]);
+                        if (activePage > selectedChapter.pages[0]) {
+                          setActivePage(activePage - 1);
                           window.scrollTo({ top: 0, behavior: 'smooth' });
                         }
                       }}
-                      disabled={pagesInChapter.indexOf(activePage) === 0}
+                      disabled={activePage <= selectedChapter.pages[0]}
                       className="rounded-xl"
                     >
                       <ChevronLeft className="w-4 h-4 mr-2" />
@@ -398,13 +420,12 @@ export function QuranScreen() {
                     <Button 
                       variant="outline" 
                       onClick={() => {
-                        const idx = pagesInChapter.indexOf(activePage);
-                        if (idx < pagesInChapter.length - 1) {
-                          setActivePage(pagesInChapter[idx + 1]);
+                        if (activePage < selectedChapter.pages[1]) {
+                          setActivePage(activePage + 1);
                           window.scrollTo({ top: 0, behavior: 'smooth' });
                         }
                       }}
-                      disabled={pagesInChapter.indexOf(activePage) === pagesInChapter.length - 1}
+                      disabled={activePage >= selectedChapter.pages[1]}
                       className="rounded-xl"
                     >
                       Алдыңғы бет
@@ -415,7 +436,7 @@ export function QuranScreen() {
               ) : (
                 // VERSE MODE RENDERING
                 <div className="flex flex-col animate-in fade-in duration-500">
-                  {verses.map((verse) => {
+                  {chapterVerses.map((verse) => {
                     const isBookmarked = quranBookmark?.chapterId === selectedChapter.id && quranBookmark?.verseId === verse.verse_number;
                     
                     return (
