@@ -110,13 +110,23 @@ export const PrayerCard = React.memo(function PrayerCard({
         <div className="flex flex-1 items-center justify-center max-w-[120px] sm:max-w-[160px] opacity-90 transition-opacity">
           <div className="flex items-center w-full">
              {history.map((s, idx) => {
-                const currentRank = getStatusRank(s);
                 const nextStatus = idx < history.length - 1 ? history[idx + 1] : "none";
-                const nextRank = getStatusRank(nextStatus);
-                const isGood = currentRank >= 3 || s === "menstruation";
-                const nextIsGood = nextRank >= 3 || nextStatus === "menstruation";
+                
+                const checkConnection = (curr: string, next: string) => {
+                  const c = curr === "menstruation" ? "prayed" : curr;
+                  const n = next === "menstruation" ? "prayed" : next;
+                  
+                  if (c === "none" || n === "none") return false;
+                  
+                  if (c === "congregation") return n === "congregation" || n === "prayed";
+                  if (c === "prayed") return n === "congregation" || n === "prayed";
+                  if (c === "delayed") return n === "delayed" || n === "prayed" || n === "congregation";
+                  if (c === "missed") return n === "missed" || n === "delayed";
+                  
+                  return false;
+                };
 
-                const isConnectedHorizontally = isGood && nextIsGood;
+                const isConnectedHorizontally = checkConnection(s, nextStatus);
                 
                 return (
                   <React.Fragment key={idx}>

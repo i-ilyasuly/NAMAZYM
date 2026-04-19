@@ -30,6 +30,7 @@ import { LeaderboardScreen } from "./components/LeaderboardScreen";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { StatisticsScreen } from "./components/StatisticsScreen";
 import { QuranVerseLive, QuranSettings } from "./components/QuranVerseLive";
+import { QuranScreen } from "./components/QuranScreen";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import {
   Drawer,
@@ -162,6 +163,10 @@ export default function App() {
 
 function AppContent() {
   const { t, i18n } = useTranslation();
+
+  // Намаз блогының масштабы. 1.0 = 100%. 1-ден төмендетсе кішірейеді, жоғарылатса үлкейеді. Осы санды өзгертіп басқаруға болады. (Мысалы аралық: 0.5 - 1.5)
+  const PRAYER_BLOCK_SCALE = 0.90; 
+
   const {
     user,
     setUser,
@@ -211,7 +216,7 @@ function AppContent() {
   }, [calculationMethod, setPrayerTimes, setCalculationMethod]);
 
   const [activeTab, setActiveTab] = useState<
-    "home" | "calendar" | "statistics" | "settings" | "analytics" | "leaderboard" | "community"
+    "home" | "calendar" | "statistics" | "settings" | "analytics" | "leaderboard" | "community" | "quran"
   >("home");
   const [selectedPrayer, setSelectedPrayer] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
@@ -1967,7 +1972,10 @@ function AppContent() {
 
               <div className="flex-1 flex flex-col justify-start min-w-0">
                 <LayoutGroup>
-                  <div className="bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl shadow-sm relative overflow-hidden">
+                  <div 
+                    className="bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-3xl shadow-sm relative overflow-hidden transition-all duration-300 transform-gpu origin-top" 
+                    style={{ zoom: PRAYER_BLOCK_SCALE } as React.CSSProperties}
+                  >
                     <div className="flex flex-col relative">
                       {!prayerTimes
                         ? Array.from({ length: 5 }).map((_, i) => (
@@ -2394,6 +2402,10 @@ function AppContent() {
 
         {activeTab === "community" && (
           <CommunityScreen />
+        )}
+
+        {activeTab === "quran" && (
+          <QuranScreen />
         )}
 
         {activeTab === "settings" && (

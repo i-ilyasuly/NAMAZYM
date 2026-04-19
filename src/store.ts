@@ -131,6 +131,13 @@ interface AppState {
   isPrivate: boolean;
   setIsPrivate: (isPrivate: boolean) => void;
   clearUserData: () => void;
+
+  quranFontSize: number;
+  setQuranFontSize: (size: number) => void;
+  quranBookmark: { chapterId: number; verseId: number; chapterName: string; } | null;
+  setQuranBookmark: (bookmark: { chapterId: number; verseId: number; chapterName: string; } | null) => void;
+  quranReadingMode: "verse" | "page";
+  setQuranReadingMode: (mode: "verse" | "page") => void;
 }
 
 export const useStore = create<AppState>()(
@@ -211,6 +218,13 @@ export const useStore = create<AppState>()(
         currentRecord: null, 
         statsSummary: null 
       }),
+
+      quranFontSize: 28,
+      setQuranFontSize: (quranFontSize) => set({ quranFontSize }),
+      quranBookmark: null,
+      setQuranBookmark: (quranBookmark) => set({ quranBookmark }),
+      quranReadingMode: "verse",
+      setQuranReadingMode: (quranReadingMode) => set({ quranReadingMode }),
     }),
     {
       name: "app-storage",
@@ -224,7 +238,10 @@ export const useStore = create<AppState>()(
         calculationMethod: state.calculationMethod,
         isDarkMode: state.isDarkMode,
         chartType: state.chartType,
-      }), // Persist gender, prayer times, and location
+        quranFontSize: state.quranFontSize,
+        quranBookmark: state.quranBookmark,
+        quranReadingMode: state.quranReadingMode,
+      }), // Persist gender, prayer times, location, and quran states
     },
   ),
 );
