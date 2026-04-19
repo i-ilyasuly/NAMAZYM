@@ -140,6 +140,8 @@ interface AppState {
   setQuranReadingMode: (mode: "verse" | "page") => void;
   isQuranImmersive: boolean;
   setIsQuranImmersive: (isQuranImmersive: boolean) => void;
+  quranNightMode: boolean;
+  setQuranNightMode: (nightMode: boolean) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -229,6 +231,8 @@ export const useStore = create<AppState>()(
       setQuranReadingMode: (quranReadingMode) => set({ quranReadingMode }),
       isQuranImmersive: false,
       setIsQuranImmersive: (isQuranImmersive) => set({ isQuranImmersive }),
+      quranNightMode: false,
+      setQuranNightMode: (quranNightMode) => set({ quranNightMode }),
     }),
     {
       name: "app-storage",
@@ -245,6 +249,7 @@ export const useStore = create<AppState>()(
         quranFontSize: state.quranFontSize,
         quranBookmark: state.quranBookmark,
         quranReadingMode: state.quranReadingMode,
+        quranNightMode: state.quranNightMode,
       }), // Persist gender, prayer times, location, and quran states
     },
   ),
