@@ -322,7 +322,7 @@ const PersistentScroller: React.FC<{
 }> = ({ text, measureText, isHtml, onComplete, onTap }) => {
   const { 
     getPos, setPos, setIsDragging, setTextWidth, textWidth: globalTextWidth, togglePause,
-    fontSizeLevel, fontFamily
+    fontSizeLevel, fontFamily, activeVerseIndex, isPlayingAudio
   } = useQuran();
 
   // Mapping level 1-5 to size classes
@@ -343,6 +343,7 @@ const PersistentScroller: React.FC<{
 
   const textRef = useRef<HTMLDivElement>(null);
   const viewRef2 = useRef<HTMLDivElement>(null);
+  const verseElementsRef = useRef<NodeListOf<Element> | null>(null);
   
   const dragState = useRef({ isDragging: false, startX: 0, startPos: 0, hasMoved: false });
 
@@ -409,6 +410,44 @@ const PersistentScroller: React.FC<{
     return () => cancelAnimationFrame(rAF);
   }, [getPos]);
 
+  // HIGH PERFORMANCE DOM HIGHLIGHTING:
+  // We bypass React rendering to highlight the active verse instantly during audio playback.
+  // We use caching to avoid expensive querySelectorAll calls on every frame.
+  useEffect(() => {
+    if (!viewRef2.current) return;
+    verseElementsRef.current = viewRef2.current.querySelectorAll('[data-verse]');
+  }, [text]);
+
+  useEffect(() => {
+    const verses = verseElementsRef.current;
+    if (!verses || activeVerseIndex < 0) return;
+    
+    // We only iterate when activeVerseIndex actually changes.
+    // The dependency array ensures this.
+    verses.forEach((v, idx) => {
+      const el = v as HTMLElement;
+      const isActive = idx === activeVerseIndex;
+      
+      // Determine target properties
+      const targetOpacity = (isActive || !isPlayingAudio) ? "1" : "0.3";
+      const targetBlur = (isActive || !isPlayingAudio) ? "blur(0px)" : "blur(1.5px)";
+      const targetScale = isActive ? "scale(1.02)" : "scale(1)";
+      
+      // Only apply if changed to minimize browser reflows
+      if (el.style.opacity !== targetOpacity) {
+        el.style.opacity = targetOpacity;
+        el.style.filter = targetBlur;
+        el.style.transform = targetScale;
+        
+        if (isActive) {
+          el.classList.add('active-verse-glow');
+        } else {
+          el.classList.remove('active-verse-glow');
+        }
+      }
+    });
+  }, [activeVerseIndex, isPlayingAudio]);
+
   return (
     <div 
       className="relative w-full h-full flex items-center pt-4 pb-4 overflow-hidden touch-pan-y cursor-grab active:cursor-grabbing" 
@@ -427,6 +466,23 @@ const PersistentScroller: React.FC<{
         }
       }}
     >
+      <style dangerouslySetInnerHTML={{ __html: `
+        [data-verse] {
+          transition: opacity 0.5s ease, filter 0.5s ease, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+          display: inline-block;
+          will-change: opacity, filter, transform;
+          backface-visibility: hidden;
+          perspective: 1000px;
+          transform: translateZ(0); /* FORCE GPU ACCELERATION */
+          contain: layout style;
+        }
+        .active-verse-glow {
+          text-shadow: 0 0 20px rgba(var(--primary), 0.3);
+        }
+        .dark .active-verse-glow {
+          text-shadow: 0 0 25px rgba(255, 255, 255, 0.2);
+        }
+      `}} />
       {/*  
         Ref for strict measurement perfectly matching the real text. 
         NO padding here so we get ONLY the pure text width.

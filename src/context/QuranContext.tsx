@@ -27,6 +27,7 @@ interface QuranContextType {
   nextSurah: () => void;
   prevSurah: () => void;
   fetchSurah: (id: number) => Promise<void>;
+  activeVerseIndex: number;
   
   // Audio
   audioPlayerRef: React.MutableRefObject<HTMLAudioElement | null>;
@@ -63,6 +64,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
   const [textWidth, setTextWidth] = useState(0);
+  const [activeVerseIndex, setActiveVerseIndex] = useState(-1);
   const posRef = useRef(0);
   const textWidthRef = useRef(0);
   const isDraggingRef = useRef(false);
@@ -398,14 +400,22 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const dFromRight = textWidthRef.current - (verseEl.offsetLeft + verseEl.offsetWidth);
           const verseVisualPosition = dFromRight + progress * verseEl.offsetWidth;
           
+          if (activeVerseIndex !== currentVerseIndex) {
+            setActiveVerseIndex(currentVerseIndex);
+          }
+
           const diff = verseVisualPosition - posRef.current;
-          // SNAP SENSITIVITY: 10px instead of 20px. 
-          // If misalignment is more than 10px, jump immediately instead of sliding.
-          if (Math.abs(diff) > 10) {
-            posRef.current = verseVisualPosition;
-          } else {
-            // INCREASED CORRECTION SPEED
-            posRef.current += diff * 0.3; 
+          
+          // SMOOTH TRANSITION LOGIC
+          // If the difference is huge (> 100px), we slide it gracefully but faster.
+          // If small, we use a very smooth damping.
+          const absDiff = Math.abs(diff);
+          if (absDiff > 100) {
+            posRef.current += diff * 0.15; // Graceful catch-up
+          } else if (absDiff > 0.1) {
+            // MEDITATIVE FLOW:
+            // Slower correction (0.08) creates a "floaty" feel that follows the voice
+            posRef.current += diff * 0.08; 
           }
         }
       } else {
@@ -439,6 +449,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       isLoading, error, getPos: useCallback(() => posRef.current, []), setPos: useCallback((v: number) => { posRef.current = v; }, []), setIsDragging: handleSetIsDragging,
       textWidth, setTextWidth: handleSetTextWidth,
       pixelsPerSecond, nextSurah, prevSurah, fetchSurah,
+      activeVerseIndex,
       audioPlayerRef, isPlayingAudio, toggleAudio, audioTimestamps,
       reciters, reciterId, setReciterId
     }}>
