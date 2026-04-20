@@ -2,6 +2,29 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { User } from "firebase/auth";
 
+export const MUSHAFS = [
+  {
+    id: 'madani',
+    name: 'Мадани Хафс',
+    baseUrl: 'https://raw.githubusercontent.com/QuranHub/quran-pages-images/main/ayat/hafs',
+    width: 1260,
+    height: 1782,
+    totalPages: 604,
+    mushafId: 1,
+    ayahInfo: '/ayahinfo.json',
+  },
+  {
+    id: 'tajweed',
+    name: 'Тәжуид',
+    baseUrl: 'https://raw.githubusercontent.com/QuranHub/quran-pages-images/main/ayat/tajweed',
+    width: 1260,
+    height: 1782,
+    totalPages: 604,
+    mushafId: 1,
+    ayahInfo: '/ayahinfo.json',
+  }
+];
+
 export type PrayerStatus =
   | "none"
   | "prayed"
@@ -142,71 +165,9 @@ interface AppState {
   setIsQuranImmersive: (isQuranImmersive: boolean) => void;
   quranNightMode: boolean;
   setQuranNightMode: (nightMode: boolean) => void;
-  quranMushaf: {
-    id: string;
-    name: string;
-    baseUrl: string;
-    totalPages: number;
-    mushafId: number; // For api.quran.com
-    width: number;
-    height: number;
-    ayahInfo?: string;
-  };
-  setQuranMushaf: (mushaf: any) => void;
+  quranMushaf: typeof MUSHAFS[0];
+  setQuranMushaf: (mushaf: typeof MUSHAFS[0]) => void;
 }
-
-export const MUSHAFS = [
-  {
-    id: 'madani',
-    name: 'Madani',
-    baseUrl: 'https://android.quran.com/data/width_1260',
-    totalPages: 604,
-    mushafId: 2,
-    width: 1260,
-    height: 2026,
-    ayahInfo: '/ayahinfo.json'
-  },
-  {
-    id: 'tajweed',
-    name: 'Tajweed',
-    baseUrl: 'https://android.quran.com/data/width_tajweed',
-    totalPages: 604,
-    mushafId: 2, // pagination is same as madani
-    width: 1260,
-    height: 2026,
-    ayahInfo: '/ayahinfo.json'
-  },
-  {
-    id: 'indopak',
-    name: 'Indopak',
-    baseUrl: 'https://android.quran.com/data/width_indopak',
-    totalPages: 604,
-    mushafId: 3,
-    width: 1260,
-    height: 2026,
-    ayahInfo: '/ayahinfo.json'
-  },
-  {
-    id: 'indopak_13_lines',
-    name: 'Indopak (13 Lines)',
-    baseUrl: 'https://android.quran.com/data/width_indopak_13',
-    totalPages: 848,
-    mushafId: 4,
-    width: 1024,
-    height: 1560,
-    ayahInfo: '/ayahinfo_indopak_13.json'
-  },
-  {
-    id: 'warsh',
-    name: 'Warsh',
-    baseUrl: 'https://android.quran.com/data/width_warsh',
-    totalPages: 604,
-    mushafId: 5,
-    width: 1024,
-    height: 1560,
-    ayahInfo: '/ayahinfo_warsh.json'
-  }
-];
 
 export const useStore = create<AppState>()(
   persist(

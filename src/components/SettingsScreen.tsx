@@ -2,12 +2,12 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
-import { useStore } from "../store";
+import { useStore, MUSHAFS } from "../store";
 import { toast } from "sonner";
 import {
   User, Share2, Globe, Trophy, Calculator, Moon, Sun, Sparkles, Bell,
   LineChart, Activity, Target, Users, TrendingUp, Lock, UserX, Database,
-  LogOut, Settings2, Loader2, ChevronRight
+  LogOut, Settings2, Loader2, ChevronRight, BookOpen
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Button } from "./ui/button";
@@ -122,7 +122,9 @@ export function SettingsScreen({
     setIsPrivate,
     gender,
     setUsername,
-    setBio
+    setBio,
+    quranMushaf,
+    setQuranMushaf
   } = useStore();
 
   const [isProfileEditing, setIsProfileEditing] = useState(false);
@@ -286,6 +288,32 @@ export function SettingsScreen({
               <Switch checked={isDarkMode} onCheckedChange={toggleDarkMode} />
             }
           />
+
+          <SettingsItem 
+            icon={<BookOpen className="w-5 h-5 text-emerald-500" />}
+            bgColor="bg-emerald-500/10"
+            title="Құран Мұсхафы"
+            description={quranMushaf?.name || "Таңдаңыз"}
+            rightElement={
+              <Select 
+                value={quranMushaf?.id || "madani"} 
+                onValueChange={(val) => {
+                  const selected = MUSHAFS.find(m => m.id === val);
+                  if (selected) setQuranMushaf(selected);
+                }}
+              >
+                <SelectTrigger className="w-[120px] h-8 text-[10px] border-none bg-muted/50 rounded-lg">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MUSHAFS.map(m => (
+                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            }
+          />
+
           {isDarkMode && (
             <SettingsItem 
               icon={<Sparkles className="w-5 h-5 text-indigo-500" />}

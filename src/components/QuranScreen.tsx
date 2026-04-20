@@ -7,6 +7,125 @@ import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import { useStore, MUSHAFS } from '../store';
 
+function QuranPage({ page, quranMushaf, nightMode, quranBookmark, toggleBookmark, hasLongPressed, touchStartPos, pressTimer, ayahBoxes }: any) {
+  if (page < 1 || page > quranMushaf.totalPages) return <div className="absolute inset-0" />;
+
+  // For android.quran.com format: /page001.png
+  // For QuranHub format: /1.png
+  const pageStr = String(page).padStart(3, '0');
+  const isGithub = quranMushaf.baseUrl.includes('githubusercontent');
+  const imageUrl = isGithub ? `${quranMushaf.baseUrl}/${page}.png` : `${quranMushaf.baseUrl}/page${pageStr}.png`;
+
+  const pageAyahs: { key: string; boxes: any[] }[] = [];
+  Object.keys(ayahBoxes).forEach(key => {
+    const boxes = ayahBoxes[key].filter((b: any) => b.page === page);
+    if (boxes.length > 0) pageAyahs.push({ key, boxes });
+  });
+
+  return (
+    <div className="absolute inset-0 w-full h-full flex flex-col justify-center">
+      <div 
+        className="relative w-full mx-auto my-auto"
+        style={{ 
+          maxWidth: `${quranMushaf.width}px`,
+          aspectRatio: `${quranMushaf.width}/${quranMushaf.height}` 
+        }}
+      >
+        <img 
+          src={imageUrl} 
+          alt={`Page ${page}`} 
+          className={cn("w-full h-full block pointer-events-none transition-all duration-500", nightMode && "invert hue-rotate-180 brightness-90")} 
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            const img = e.currentTarget;
+            const src = img.src;
+            const tried = parseInt(img.dataset.triedFallback || '0');
+            if (tried >= 2) return;
+
+            if (tried === 0) {
+              img.src = src.replace('android.quran.com/data', 'everyayah.com/data/quran_android_images');
+            } else if (tried === 1) {
+              if (src.includes('1260')) img.src = src.replace('1260', '1024');
+            }
+            img.dataset.triedFallback = String(tried + 1);
+          }}
+        />
+        <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+          <div className="relative w-full h-full">
+            {pageAyahs.map(ayah => {
+              const [cIdStr, vIdStr] = ayah.key.split(':');
+              const cId = parseInt(cIdStr);
+              const vId = parseInt(vIdStr);
+              const isBookmarked = quranBookmark?.chapterId === cId && quranBookmark?.verseId === vId;
+              
+              return (
+                <div key={ayah.key} className="group/ayah">
+                  {ayah.boxes.map((box, idx) => (
+                    <button
+                      key={`${ayah.key}-${idx}`}
+                      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onTouchStart={(e) => {
+                        hasLongPressed.current = false;
+                        const touch = e.targetTouches[0];
+                        touchStartPos.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+                        pressTimer.current = setTimeout(() => {
+                          hasLongPressed.current = true;
+                          toggleBookmark({ id: cId, name_simple: `Chapter ${cId}` }, { verse_number: vId });
+                          pressTimer.current = null;
+                        }, 400);
+                      }}
+                      onTouchEnd={() => {
+                        if (pressTimer.current) {
+                          clearTimeout(pressTimer.current);
+                          pressTimer.current = null;
+                        }
+                      }}
+                      onTouchMove={(e) => {
+                        if (pressTimer.current && touchStartPos.current) {
+                          const touch = e.targetTouches[0];
+                          const dx = touch.clientX - touchStartPos.current.x;
+                          const dy = touch.clientY - touchStartPos.current.y;
+                          if (Math.sqrt(dx*dx + dy*dy) > 10) {
+                            clearTimeout(pressTimer.current);
+                            pressTimer.current = null;
+                          }
+                        }
+                      }}
+                      onMouseDown={(e) => {
+                        if (e.button !== 0) return;
+                        hasLongPressed.current = false;
+                        pressTimer.current = setTimeout(() => {
+                          hasLongPressed.current = true;
+                          toggleBookmark({ id: cId, name_simple: `Chapter ${cId}` }, { verse_number: vId });
+                          pressTimer.current = null;
+                        }, 400);
+                      }}
+                      onMouseUp={() => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } }}
+                      onMouseLeave={() => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } }}
+                      onClick={(e) => e.stopPropagation()}
+                      className={cn(
+                        "absolute cursor-pointer transition-colors select-none outline-none pointer-events-auto",
+                        isBookmarked ? (nightMode ? "bg-sky-400/35" : "bg-sky-500/25") : "bg-transparent group-hover/ayah:bg-sky-500/10"
+                      )}
+                      style={{
+                        left: `${(box.x1 / quranMushaf.width) * 100}%`,
+                        top: `${((box.y1 - 15) / quranMushaf.height) * 100}%`,
+                        width: `${((box.x2 - box.x1) / quranMushaf.width) * 100}%`,
+                        height: `${((box.y2 - box.y1 + 30) / quranMushaf.height) * 100}%`,
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ImageOverlay({ activePage, setActivePage, selectedChapter, toggleBookmark, quranBookmark, setIsQuranImmersive, isQuranImmersive, nightMode }: any) {
   const { quranMushaf } = useStore();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -14,83 +133,39 @@ function ImageOverlay({ activePage, setActivePage, selectedChapter, toggleBookma
   const pressTimer = useRef<any>(null);
   const touchStartPos = useRef<{ x: number, y: number, time: number } | null>(null);
   const hasLongPressed = useRef(false);
-  const [direction, setDirection] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
 
   useEffect(() => {
-    // Try to load the specific ayah info for this mushaf, fallback to standard
     const infoUrl = quranMushaf.ayahInfo || '/ayahinfo.json';
     fetch(infoUrl)
       .then(r => r.json())
       .then(setAyahBoxes)
       .catch(() => {
-        // Fallback to default if specific one fails
-        if (infoUrl !== '/ayahinfo.json') {
-          fetch('/ayahinfo.json').then(r => r.json()).then(setAyahBoxes).catch(console.error);
-        }
+        if (infoUrl !== '/ayahinfo.json') fetch('/ayahinfo.json').then(r => r.json()).then(setAyahBoxes).catch(console.error);
       });
   }, [quranMushaf]);
 
-  const handlePageChange = (newDir: number) => {
-    if (newDir > 0 && activePage < quranMushaf.totalPages) {
-      setDirection(1);
-      setActivePage(activePage + 1);
-    } else if (newDir < 0 && activePage > 1) {
-      setDirection(-1);
-      setActivePage(activePage - 1);
+  const handleDragEnd = (_: any, info: any) => {
+    const threshold = 50;
+    const { offset, velocity } = info;
+
+    if (offset.x > threshold || (velocity.x > 500 && offset.x > 0)) {
+      if (activePage < quranMushaf.totalPages) setActivePage(activePage + 1);
+    } else if (offset.x < -threshold || (velocity.x < -500 && offset.x < 0)) {
+      if (activePage > 1) setActivePage(activePage - 1);
     }
+    setIsSwiping(false);
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.targetTouches[0];
-    touchStartPos.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
-    hasLongPressed.current = false;
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!touchStartPos.current) return;
-    const touch = e.changedTouches[0];
-    const dx = touch.clientX - touchStartPos.current.x;
-    const dy = touch.clientY - touchStartPos.current.y;
-    const dt = Date.now() - touchStartPos.current.time;
-    
-    // Swipe detection (one finger)
-    if (Math.abs(dx) > 50 && Math.abs(dy) < 100 && dt < 300) {
-      if (dx < 0) handlePageChange(1); // Swipe left -> Next
-      else handlePageChange(-1);       // Swipe right -> Prev
-    } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && dt < 200) {
-      // Tap detection
-      if (!hasLongPressed.current) {
-        setIsQuranImmersive(!isQuranImmersive);
-      }
-    }
-    
-    touchStartPos.current = null;
-  };
-
-  const pageStr = String(activePage).padStart(3, '0');
-  const imageUrl = `${quranMushaf.baseUrl}/page${pageStr}.png`;
-
-  const pageAyahs: { key: string; boxes: any[] }[] = [];
-  Object.keys(ayahBoxes).forEach(key => {
-    const boxes = ayahBoxes[key].filter((b: any) => b.page === activePage);
-    if (boxes.length > 0) pageAyahs.push({ key, boxes });
-  });
-
-  const variants = {
-    enter: (direction: number) => ({
-      x: direction > 0 ? '100%' : '-100%',
-      opacity: 0
-    }),
-    center: {
-      zIndex: 1,
-      x: 0,
-      opacity: 1
-    },
-    exit: (direction: number) => ({
-      zIndex: 0,
-      x: direction < 0 ? '100%' : '-100%',
-      opacity: 0
-    })
+  const commonProps = {
+    quranMushaf,
+    nightMode,
+    quranBookmark,
+    toggleBookmark,
+    hasLongPressed,
+    touchStartPos,
+    pressTimer,
+    ayahBoxes
   };
 
   return (
@@ -100,159 +175,45 @@ function ImageOverlay({ activePage, setActivePage, selectedChapter, toggleBookma
         className={cn("relative w-full h-full max-w-[1260px] mx-auto select-none overflow-hidden touch-pan-y transition-colors", nightMode ? "bg-zinc-950" : "bg-white")}
         style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
         onContextMenu={(e) => e.preventDefault()}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
+        onClick={() => {
+          if (!isSwiping && !hasLongPressed.current) {
+            setIsQuranImmersive(!isQuranImmersive);
+          }
+        }}
       >
-        <AnimatePresence initial={false} custom={direction}>
+        <AnimatePresence initial={false} mode="wait">
           <motion.div
             key={activePage}
-            custom={direction}
-            variants={variants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{
-              x: { type: "spring", stiffness: 300, damping: 30 },
-              opacity: { duration: 0.2 }
-            }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
             className="absolute inset-0 w-full h-full"
           >
-            <div className="relative w-full h-full overflow-y-auto scrollbar-hide flex flex-col justify-center">
-              <div 
-                className="relative w-full mx-auto my-auto"
-                style={{ 
-                  maxWidth: `${quranMushaf.width}px`,
-                  aspectRatio: `${quranMushaf.width}/${quranMushaf.height}` 
-                }}
-              >
-                <img 
-                  src={imageUrl} 
-                  alt={`Page ${activePage}`} 
-                  className={cn("w-full h-full block pointer-events-none transition-all duration-500", nightMode && "invert hue-rotate-180 brightness-90")} 
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    const img = e.currentTarget;
-                    const src = img.src;
-                    
-                    // Logic to avoid infinite loops
-                    const tried = parseInt(img.dataset.triedFallback || '0');
-                    if (tried >= 3) return;
-
-                    if (tried === 0) {
-                      // Attempt 1: Try swapping tajweed naming convention
-                      if (src.includes('tajweed_width_1260')) {
-                        img.src = src.replace('tajweed_width_1260', 'width_tajweed');
-                      } else if (src.includes('width_tajweed')) {
-                        img.src = src.replace('width_tajweed', 'tajweed_width_1260');
-                      } else {
-                        // Otherwise just move to next server
-                        img.src = src.replace('android.quran.com/data', 'everyayah.com/data/quran_android_images');
-                      }
-                    } else if (tried === 1) {
-                      // Attempt 2: Try EveryAyah mirror
-                      img.src = src.replace('android.quran.com/data', 'everyayah.com/data/quran_android_images');
-                    } else if (tried === 2) {
-                      // Attempt 3: Try 1024 resolution as a last resort
-                      if (src.includes('1260')) {
-                        img.src = src.replace('1260', '1024');
-                      }
-                    }
-                    
-                    img.dataset.triedFallback = String(tried + 1);
-                  }}
-                />
-                <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
-                  <div className="relative w-full h-full">
-                    {pageAyahs.map(ayah => {
-                      const [cIdStr, vIdStr] = ayah.key.split(':');
-                      const cId = parseInt(cIdStr);
-                      const vId = parseInt(vIdStr);
-                      const isBookmarked = quranBookmark?.chapterId === cId && quranBookmark?.verseId === vId;
-                      
-                      return (
-                        <div key={ayah.key} className="group/ayah">
-                          {ayah.boxes.map((box, idx) => (
-                            <button
-                              key={`${ayah.key}-${idx}`}
-                              onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                              onTouchStart={(e) => {
-                                hasLongPressed.current = false;
-                                const touch = e.targetTouches[0];
-                                touchStartPos.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
-                                pressTimer.current = setTimeout(() => {
-                                  hasLongPressed.current = true;
-                                  toggleBookmark(
-                                    { id: cId, name_simple: `Chapter ${cId}` }, 
-                                    { verse_number: vId }
-                                  );
-                                  pressTimer.current = null;
-                                }, 400);
-                              }}
-                              onTouchEnd={() => {
-                                if (pressTimer.current) {
-                                  clearTimeout(pressTimer.current);
-                                  pressTimer.current = null;
-                                }
-                              }}
-                              onTouchMove={(e) => {
-                                if (pressTimer.current && touchStartPos.current) {
-                                  const touch = e.targetTouches[0];
-                                  const dx = touch.clientX - touchStartPos.current.x;
-                                  const dy = touch.clientY - touchStartPos.current.y;
-                                  if (Math.sqrt(dx*dx + dy*dy) > 10) {
-                                    clearTimeout(pressTimer.current);
-                                    pressTimer.current = null;
-                                  }
-                                }
-                              }}
-                              onMouseDown={(e) => {
-                                if (e.button !== 0) return;
-                                hasLongPressed.current = false;
-                                pressTimer.current = setTimeout(() => {
-                                  hasLongPressed.current = true;
-                                  toggleBookmark(
-                                    { id: cId, name_simple: `Chapter ${cId}` }, 
-                                    { verse_number: vId }
-                                  );
-                                  pressTimer.current = null;
-                                }, 400);
-                              }}
-                              onMouseUp={() => {
-                                if (pressTimer.current) {
-                                  clearTimeout(pressTimer.current);
-                                  pressTimer.current = null;
-                                }
-                              }}
-                              onMouseLeave={() => {
-                                if (pressTimer.current) {
-                                  clearTimeout(pressTimer.current);
-                                  pressTimer.current = null;
-                                }
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              className={cn(
-                                "absolute cursor-pointer transition-colors select-none outline-none pointer-events-auto",
-                                isBookmarked 
-                                  ? (nightMode ? "bg-sky-400/35" : "bg-sky-500/25") 
-                                  : "bg-transparent group-hover/ayah:bg-sky-500/10"
-                              )}
-                              style={{
-                                left: `${(box.x1 / quranMushaf.width) * 100}%`,
-                                // Increase vertical bleed significantly to close gaps between lines (avg gap is ~30-50px)
-                                top: `${((box.y1 - 15) / quranMushaf.height) * 100}%`,
-                                width: `${((box.x2 - box.x1) / quranMushaf.width) * 100}%`,
-                                height: `${((box.y2 - box.y1 + 30) / quranMushaf.height) * 100}%`,
-                                WebkitTapHighlightColor: 'transparent',
-                              }}
-                            />
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+            <motion.div
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.8}
+              onDragStart={() => setIsSwiping(true)}
+              onDragEnd={handleDragEnd}
+              className="absolute inset-0 w-full h-full flex flex-row items-center"
+              style={{ width: '100%', left: '0%' }}
+            >
+              {/* Previous Page (RTL: to the right) */}
+              <div className="absolute left-[100%] w-full h-full pointer-events-none opacity-50">
+                <QuranPage page={activePage - 1} {...commonProps} />
               </div>
-            </div>
+
+              {/* Current Page */}
+              <div className="absolute left-0 w-full h-full">
+                <QuranPage page={activePage} {...commonProps} />
+              </div>
+
+              {/* Next Page (RTL: to the left) */}
+              <div className="absolute left-[-100%] w-full h-full pointer-events-none opacity-50">
+                <QuranPage page={activePage + 1} {...commonProps} />
+              </div>
+            </motion.div>
           </motion.div>
         </AnimatePresence>
 
