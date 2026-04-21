@@ -9,7 +9,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { cn } from "../lib/utils";
 
 export function LeaderboardScreen() {
-  const { user } = useStore();
+  const { user, isStarrySky, backgroundType, isDarkMode } = useStore();
+  const isSpecialBg = backgroundType !== 'stars' || (isDarkMode && isStarrySky);
   const [leaderboardUsers, setLeaderboardUsers] = useState<any[]>([]);
   const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
 
@@ -36,8 +37,11 @@ export function LeaderboardScreen() {
   }, []);
 
   return (
-    <div className="space-y-6 pb-24 px-4 pt-4">
-      <div className="flex items-center justify-between">
+    <div className={cn("space-y-6 pb-24 px-4 pt-4 transition-all duration-500", isSpecialBg && "bg-transparent")}>
+      <div className={cn(
+        "flex items-center justify-between p-4 rounded-[2.5rem] bg-card border shadow-sm transition-all duration-500",
+        isSpecialBg && "bg-card/40 backdrop-blur-md"
+      )}>
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Рейтинг</h1>
           <p className="text-xs text-muted-foreground mt-0.5">Ең үздік құлшылық иелері</p>
@@ -50,7 +54,7 @@ export function LeaderboardScreen() {
       <div className="space-y-3">
         {isLoadingLeaderboard ? (
           Array(5).fill(0).map((_, i) => (
-            <div key={i} className="flex items-center gap-4 p-4 rounded-3xl border bg-card animate-pulse">
+            <div key={i} className={cn("flex items-center gap-4 p-4 rounded-3xl border bg-card animate-pulse", isSpecialBg && "bg-card/40 backdrop-blur-md")}>
               <div className="w-6 h-6 rounded-full bg-muted" />
               <div className="w-10 h-10 rounded-full bg-muted" />
               <div className="flex-1 space-y-2">
@@ -68,7 +72,8 @@ export function LeaderboardScreen() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
               className={cn(
-                "flex items-center gap-4 p-4 rounded-3xl border bg-card transition-all",
+                "flex items-center gap-4 p-4 rounded-3xl border transition-all duration-500",
+                isSpecialBg ? "bg-card/40 backdrop-blur-md" : "bg-card",
                 u.uid === user?.uid && "border-primary ring-2 ring-primary/10 bg-primary/5"
               )}
             >

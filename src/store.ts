@@ -6,17 +6,7 @@ export const MUSHAFS = [
   {
     id: 'madani',
     name: 'Мадани Хафс',
-    baseUrl: 'https://raw.githubusercontent.com/QuranHub/quran-pages-images/main/ayat/hafs',
-    width: 1260,
-    height: 1782,
-    totalPages: 604,
-    mushafId: 1,
-    ayahInfo: '/ayahinfo.json',
-  },
-  {
-    id: 'tajweed',
-    name: 'Тәжуид',
-    baseUrl: 'https://raw.githubusercontent.com/QuranHub/quran-pages-images/main/ayat/tajweed',
+    baseUrl: 'https://android.quran.com/data/width_1260',
     width: 1260,
     height: 1782,
     totalPages: 604,
@@ -43,12 +33,14 @@ export interface PrayerRecord {
   isha: PrayerStatus;
   
   // Extra Prayers
-  witr?: boolean;
-  tahajjud?: boolean;
+  witr?: boolean | "prayed" | "none";
+  tahajjud?: boolean | "prayed" | "none";
   tahajjudRakats?: number;
-  duha?: boolean;
+  tahajjudActive?: boolean;
+  duha?: boolean | "prayed" | "none";
   duhaRakats?: number;
-  juma?: boolean; // Only relevant on Fridays
+  duhaActive?: boolean;
+  juma?: boolean | "prayed" | "none"; // Only relevant on Fridays
 
   contexts?: {
     fajr?: string[];
@@ -146,6 +138,15 @@ interface AppState {
   setStatsSummary: (summary: any) => void;
   isDarkMode: boolean;
   setIsDarkMode: (isDark: boolean) => void;
+  isStarrySky: boolean;
+  setIsStarrySky: (isStarry: boolean) => void;
+
+  backgroundType: "stars" | "image" | "video";
+  setBackgroundType: (type: "stars" | "image" | "video") => void;
+  backgroundUrl: string | null;
+  setBackgroundUrl: (url: string | null) => void;
+  backgroundName: string | null;
+  setBackgroundName: (name: string | null) => void;
 
   username: string | null;
   setUsername: (username: string | null) => void;
@@ -233,6 +234,15 @@ export const useStore = create<AppState>()(
       setStatsSummary: (statsSummary) => set({ statsSummary }),
       isDarkMode: false,
       setIsDarkMode: (isDarkMode) => set({ isDarkMode }),
+      isStarrySky: true,
+      setIsStarrySky: (isStarrySky) => set({ isStarrySky }),
+
+      backgroundType: "stars",
+      setBackgroundType: (backgroundType) => set({ backgroundType }),
+      backgroundUrl: null,
+      setBackgroundUrl: (backgroundUrl) => set({ backgroundUrl }),
+      backgroundName: null,
+      setBackgroundName: (backgroundName) => set({ backgroundName }),
 
       username: null,
       setUsername: (username) => set({ username }),
@@ -272,6 +282,10 @@ export const useStore = create<AppState>()(
         searchHistory: state.searchHistory,
         calculationMethod: state.calculationMethod,
         isDarkMode: state.isDarkMode,
+        isStarrySky: state.isStarrySky,
+        backgroundType: state.backgroundType,
+        backgroundUrl: state.backgroundUrl,
+        backgroundName: state.backgroundName,
         chartType: state.chartType,
         quranFontSize: state.quranFontSize,
         quranBookmark: state.quranBookmark,

@@ -6,12 +6,15 @@ import { searchUsers, sendFriendRequest, acceptFriendRequest, rejectFriendReques
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { cn } from '../lib/utils';
 import { Search, UserPlus, UserCheck, UserX, Clock, Check, X, Users, Activity } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export function CommunityScreen() {
-  const { user } = useStore();
+  const { user, isStarrySky, backgroundType, isDarkMode } = useStore();
+  const isSpecialBg = backgroundType !== 'stars' || (isDarkMode && isStarrySky);
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -142,9 +145,16 @@ export function CommunityScreen() {
   };
 
   return (
-    <div className="space-y-6 max-w-full mx-auto w-full pb-24">
+    <div className={cn(
+      "space-y-6 max-w-full mx-auto w-full pb-24 transition-all duration-500",
+      isSpecialBg && "bg-transparent"
+    )}>
       <div className="flex flex-col space-y-4">
-        <div className="flex items-center justify-between">
+        <div className={cn(
+          "p-4 rounded-[2.5rem] bg-card border shadow-sm transition-all duration-500",
+          isSpecialBg && "bg-card/40 backdrop-blur-md"
+        )}>
+          <div className="flex items-center justify-between mb-4">
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Қауымдастық
           </h1>
@@ -213,7 +223,7 @@ export function CommunityScreen() {
                   const isPendingIn = incomingRequests.some(r => r.senderId === profile.uid);
 
                   return (
-                    <div key={profile.uid} className="flex items-center justify-between p-4 bg-card border rounded-2xl shadow-sm">
+                    <div key={profile.uid} className={cn("flex items-center justify-between p-4 bg-card border rounded-2xl shadow-sm", isStarrySky && "bg-card/40 backdrop-blur-md")}>
                       <div className="flex items-center gap-3">
                         <Avatar className="w-12 h-12">
                           <AvatarImage src={profile.photoURL} />
@@ -271,7 +281,7 @@ export function CommunityScreen() {
                 ) : (
                   <div className="space-y-3">
                     {incomingRequests.map(req => (
-                      <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-card border rounded-2xl shadow-sm gap-4">
+                      <div key={req.id} className={cn("flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-card border rounded-2xl shadow-sm gap-4", isStarrySky && "bg-card/40 backdrop-blur-md")}>
                         <div className="flex items-center gap-3">
                           <Avatar className="w-12 h-12">
                             <AvatarImage src={req.senderProfile?.photoURL} />
@@ -300,7 +310,7 @@ export function CommunityScreen() {
                 <h3 className="font-bold text-sm text-muted-foreground mb-3 uppercase tracking-wider">Жіберілген өтінімдер ({outgoingRequests.length})</h3>
                 <div className="space-y-3">
                   {outgoingRequests.map(req => (
-                    <div key={req.id} className="flex items-center justify-between p-4 bg-card border rounded-2xl shadow-sm opacity-70">
+                    <div key={req.id} className={cn("flex items-center justify-between p-4 bg-card border rounded-2xl shadow-sm opacity-70", isStarrySky && "bg-card/40 backdrop-blur-md")}>
                       <div className="flex items-center gap-3">
                         <Avatar className="w-10 h-10">
                           <AvatarImage src={req.receiverProfile?.photoURL} />
@@ -330,7 +340,7 @@ export function CommunityScreen() {
               className="space-y-4"
             >
               {friends.length === 0 ? (
-                <div className="text-center py-12 px-4 bg-card border rounded-3xl shadow-sm">
+                <div className={cn("text-center py-12 px-4 bg-card border rounded-3xl shadow-sm", isStarrySky && "bg-card/40 backdrop-blur-md")}>
                   <div className="w-16 h-16 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto mb-4">
                     <Users className="w-8 h-8" />
                   </div>
@@ -345,7 +355,7 @@ export function CommunityScreen() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {friends.map(friend => (
-                    <div key={friend.uid} className="flex flex-col p-5 bg-card border rounded-3xl shadow-sm gap-4 relative overflow-hidden">
+                    <div key={friend.uid} className={cn("flex flex-col p-5 bg-card border rounded-3xl shadow-sm gap-4 relative overflow-hidden", isStarrySky && "bg-card/40 backdrop-blur-md")}>
                       <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-full -z-10" />
                       
                       <div className="flex items-start justify-between">
@@ -385,5 +395,6 @@ export function CommunityScreen() {
         </AnimatePresence>
       </div>
     </div>
+  </div>
   );
 }

@@ -36,6 +36,7 @@ interface QuranContextType {
   reciters: any[];
   reciterId: number;
   setReciterId: (id: number) => void;
+  surahList: any[];
 }
 
 const QuranContext = createContext<QuranContextType | undefined>(undefined);
@@ -73,6 +74,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [audioTimestamps, setAudioTimestampsState] = useState<any[]>([]);
   const audioTimestampsRef = useRef<any[]>([]);
   const [reciters, setReciters] = useState<any[]>([]);
+  const [surahList, setSurahList] = useState<any[]>([]);
   const [reciterId, setReciterIdState] = useState<number>(() => {
     return parseInt(localStorage.getItem('quran_reciter_id') || '7', 10);
   });
@@ -104,6 +106,18 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       .then(data => {
         if (data.recitations) {
           setReciters(data.recitations);
+        }
+      })
+      .catch(console.error);
+      
+    // Fetch chapters list
+    const lng = localStorage.getItem('i18nextLng') || 'kk';
+    const apiLng = lng === 'ru' ? 'ru' : 'en'; // default to en if not ru for Kazakh for now
+    fetch(`https://api.quran.com/api/v4/chapters?language=${apiLng}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.chapters) {
+          setSurahList(data.chapters);
         }
       })
       .catch(console.error);
@@ -440,7 +454,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       textWidth, setTextWidth: handleSetTextWidth,
       pixelsPerSecond, nextSurah, prevSurah, fetchSurah,
       audioPlayerRef, isPlayingAudio, toggleAudio, audioTimestamps,
-      reciters, reciterId, setReciterId
+      reciters, reciterId, setReciterId, surahList
     }}>
       {children}
     </QuranContext.Provider>

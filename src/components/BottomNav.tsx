@@ -5,8 +5,8 @@ import { cn } from '../lib/utils';
 import { AppLogo } from './AppLogo';
 
 interface BottomNavProps {
-  activeTab: 'home' | 'calendar' | 'statistics' | 'settings' | 'analytics' | 'leaderboard' | 'community' | 'quran';
-  onChange: (tab: 'home' | 'calendar' | 'statistics' | 'settings' | 'analytics' | 'leaderboard' | 'community' | 'quran') => void;
+  activeTab: 'home' | 'calendar' | 'statistics' | 'settings' | 'analytics' | 'leaderboard' | 'quran';
+  onChange: (tab: 'home' | 'calendar' | 'statistics' | 'settings' | 'analytics' | 'leaderboard' | 'quran') => void;
 }
 
 export function BottomNav({ activeTab, onChange }: BottomNavProps) {
@@ -16,7 +16,6 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
     { id: 'home', icon: null, label: t('home') },
     { id: 'quran', icon: BookOpen, label: 'Құран' },
     { id: 'analytics', icon: Activity, label: 'NI' },
-    { id: 'community', icon: Users, label: 'Достар' },
     { id: 'statistics', icon: BarChart2, label: t('statistics') },
     { id: 'settings', icon: Settings, label: t('settings') },
   ] as const;

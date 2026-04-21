@@ -2,12 +2,12 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
-import { useStore, MUSHAFS } from "../store";
+import { useStore } from "../store";
 import { toast } from "sonner";
 import {
   User, Share2, Globe, Trophy, Calculator, Moon, Sun, Sparkles, Bell,
   LineChart, Activity, Target, Users, TrendingUp, Lock, UserX, Database,
-  LogOut, Settings2, Loader2, ChevronRight, BookOpen
+  LogOut, Settings2, Loader2, ChevronRight, Image as ImageIcon
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Button } from "./ui/button";
@@ -19,12 +19,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { cn } from "../lib/utils";
 
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  const { isStarrySky } = useStore();
   return (
     <div className="space-y-3">
       <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-4">
         {title}
       </h3>
-      <div className="bg-card border rounded-3xl overflow-hidden divide-y">
+      <div className={cn("bg-card border rounded-3xl overflow-hidden divide-y", isStarrySky && "bg-card/40 backdrop-blur-md")}>
         {children}
       </div>
     </div>
@@ -84,6 +85,7 @@ interface SettingsScreenProps {
   toggleDarkMode: () => void;
   toggleStarrySky: () => void;
   isStarrySky: boolean;
+  openWallpaperGallery: () => void;
   generateMockData: () => Promise<void>;
   isGeneratingMock: boolean;
   setIsLogoutDialogOpen: (open: boolean) => void;
@@ -95,6 +97,7 @@ export function SettingsScreen({
   toggleDarkMode,
   toggleStarrySky,
   isStarrySky,
+  openWallpaperGallery,
   generateMockData,
   isGeneratingMock,
   setIsLogoutDialogOpen
@@ -123,8 +126,8 @@ export function SettingsScreen({
     gender,
     setUsername,
     setBio,
-    quranMushaf,
-    setQuranMushaf
+    backgroundType,
+    backgroundName
   } = useStore();
 
   const [isProfileEditing, setIsProfileEditing] = useState(false);
@@ -183,9 +186,12 @@ export function SettingsScreen({
   };
 
   return (
-    <div className="space-y-8 pb-28 px-4 pt-4 max-w-3xl mx-auto w-full">
+    <div className={cn(
+      "space-y-8 pb-28 px-4 pt-4 max-w-3xl mx-auto w-full transition-colors",
+      isStarrySky ? "bg-transparent" : "bg-transparent"
+    )}>
       {/* Profile Header */}
-      <div className="flex flex-col items-center text-center space-y-4 py-6 bg-card border rounded-[2.5rem] shadow-sm relative overflow-hidden">
+      <div className={cn("flex flex-col items-center text-center space-y-4 py-6 bg-card border rounded-[2.5rem] shadow-sm relative overflow-hidden", isStarrySky && "bg-card/40 backdrop-blur-md")}>
         <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-b from-primary/5 to-transparent" />
         <div className="relative">
           <Avatar className="w-24 h-24 border-4 border-background shadow-2xl">
@@ -288,42 +294,25 @@ export function SettingsScreen({
               <Switch checked={isDarkMode} onCheckedChange={toggleDarkMode} />
             }
           />
-
-          <SettingsItem 
-            icon={<BookOpen className="w-5 h-5 text-emerald-500" />}
-            bgColor="bg-emerald-500/10"
-            title="Құран Мұсхафы"
-            description={quranMushaf?.name || "Таңдаңыз"}
-            rightElement={
-              <Select 
-                value={quranMushaf?.id || "madani"} 
-                onValueChange={(val) => {
-                  const selected = MUSHAFS.find(m => m.id === val);
-                  if (selected) setQuranMushaf(selected);
-                }}
-              >
-                <SelectTrigger className="w-[120px] h-8 text-[10px] border-none bg-muted/50 rounded-lg">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MUSHAFS.map(m => (
-                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            }
-          />
-
           {isDarkMode && (
-            <SettingsItem 
-              icon={<Sparkles className="w-5 h-5 text-indigo-500" />}
-              bgColor="bg-indigo-500/10"
-              title="Жұлдызды аспан"
-              description="Басты беттегі анимация"
-              rightElement={
-                <Switch checked={isStarrySky} onCheckedChange={toggleStarrySky} />
-              }
-            />
+            <>
+              <SettingsItem 
+                icon={<Sparkles className="w-5 h-5 text-indigo-500" />}
+                bgColor="bg-indigo-500/10"
+                title="Жұлдызды аспан"
+                description="Басты беттегі анимация"
+                rightElement={
+                  <Switch checked={isStarrySky} onCheckedChange={toggleStarrySky} />
+                }
+              />
+              <SettingsItem 
+                icon={<ImageIcon className="w-5 h-5 text-emerald-500" />}
+                bgColor="bg-emerald-500/10"
+                title="Тұсқағаз галереясы"
+                description={backgroundName || (backgroundType === 'stars' ? "Жұлдызды аспан" : "Сурет")}
+                onClick={openWallpaperGallery}
+              />
+            </>
           )}
           <SettingsItem 
             icon={<Bell className="w-5 h-5 text-rose-500" />}

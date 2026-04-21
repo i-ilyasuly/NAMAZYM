@@ -136,9 +136,31 @@
         "createdAt": { "type": "timestamp" }
       },
       "required": ["uid", "createdAt"]
+    },
+    "Wallpaper": {
+      "title": "Wallpaper",
+      "description": "A background wallpaper (static or video).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["image", "video", "stars"] },
+        "url": { "type": "string" },
+        "thumbnail": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "isPremium": { "type": "boolean" },
+        "previewUrl": { "type": "string" }
+      },
+      "required": ["id", "type", "url"]
     }
   },
   "firestore": {
+    "/wallpapers/{wallpaperId}": {
+      "schema": {
+        "$ref": "#/entities/Wallpaper"
+      },
+      "description": "Publicly available wallpapers for selection."
+    },
     "/users/{userId}": {
       "schema": {
         "$ref": "#/entities/User"

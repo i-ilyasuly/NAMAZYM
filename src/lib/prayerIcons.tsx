@@ -17,6 +17,8 @@ export function getPrayerTimeIcon(prayerId: string, className?: string): React.R
     case 'asr':     return <Sun       className={cn("w-5 h-5 text-amber-600/80 stroke-[1.5px]",  className)} />;
     case 'maghrib': return <Sunset    className={cn("w-5 h-5 text-indigo-400/80", className)} />;
     case 'isha':    return <Moon      className={cn("w-5 h-5 text-slate-500/80",  className)} />;
+    case 'tahajjud': return <Moon     className={cn("w-5 h-5 text-indigo-500", className)} />;
+    case 'duha':     return <Sun      className={cn("w-5 h-5 text-amber-500", className)} />;
     default:        return <Clock     className={cn("w-5 h-5", className)} />;
   }
 }

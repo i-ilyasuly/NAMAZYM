@@ -9,9 +9,11 @@ import { Switch } from './ui/switch';
 import { Label } from './ui/label';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { format, subDays } from 'date-fns';
-import { Loader2, TrendingUp, TrendingDown, Activity, Target, Award, Flame, AlertCircle, Settings2, X, HelpCircle, Info } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, Activity, Target, Award, Flame, AlertCircle, Settings2, X, HelpCircle, Info, Menu, Users } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { calculateBaseNP, applyModifiers, aggregateDayScore, DayAggregationInput, PrayerStatus, prepareAggregationInput } from '../lib/scoreEngine';
+import { CommunityScreen } from './CommunityScreen';
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from './ui/drawer';
 
 interface AnalyticsScreenProps {
   currentStreak?: number;
@@ -33,6 +35,8 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
   const [totalQaza, setTotalQaza] = useState(0);
   const { 
     isDarkMode, 
+    isStarrySky,
+    backgroundType,
     gender, 
     showChartMarkers, 
     setShowChartMarkers,
@@ -53,6 +57,7 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
   // Settings & Legend State
   const [showSettings, setShowSettings] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [showCommunity, setShowCommunity] = useState(false);
   const [legendData, setLegendData] = useState<any>(null);
 
   // 1. Fetch Data
@@ -499,12 +504,17 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
     }
   };
 
+  const isSpecialBg = backgroundType !== 'stars' || (isDarkMode && isStarrySky);
+
   return (
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="pb-16 flex flex-col h-[100dvh] w-full bg-card max-w-full mx-auto"
+      className={cn(
+        "pb-16 flex flex-col h-[100dvh] w-full max-w-full mx-auto transition-colors",
+        isSpecialBg ? "bg-transparent" : "bg-card"
+      )}
     >
       <div className="flex-1 flex flex-col relative w-full h-full border-x border-muted/20">
         {/* Tooltip Container */}
@@ -541,7 +551,16 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
         <div ref={chartContainerRef} className="w-full flex-1 [&_a]:hidden relative">
           {/* TradingView Style Legend */}
           <div className="absolute top-2 left-3 z-30 flex flex-col pointer-events-none">
-            <div className="flex items-center gap-2 pointer-events-auto">
+            <div className="flex items-center gap-3 pointer-events-auto">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="w-8 h-8 rounded-full bg-background/50 backdrop-blur-sm border"
+                onClick={() => setShowCommunity(true)}
+              >
+                <Menu className="w-4 h-4" />
+              </Button>
+
               <span className="font-bold text-sm">Namaz Points</span>
               <div className="flex bg-muted/80 p-0.5 rounded-lg border backdrop-blur-md shadow-sm">
                 {(['1M', '15M', '1H', '1D'] as const).map(tf => (
@@ -770,6 +789,25 @@ export function AnalyticsScreen({ currentStreak = 0 }: AnalyticsScreenProps) {
           </div>
         </div>
       </div>
+
+      <Drawer open={showCommunity} onOpenChange={setShowCommunity}>
+        <DrawerContent className="max-h-[90dvh]">
+          <DrawerHeader className="border-b pb-2">
+            <div className="flex items-center justify-between">
+              <DrawerTitle className="text-xl font-bold flex items-center gap-2">
+                <Users className="w-5 h-5 text-primary" />
+                Достар
+              </DrawerTitle>
+              <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setShowCommunity(false)}>
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+          </DrawerHeader>
+          <div className="overflow-y-auto px-4 py-2 custom-scrollbar">
+            <CommunityScreen />
+          </div>
+        </DrawerContent>
+      </Drawer>
 
     </motion.div>
   );

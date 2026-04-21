@@ -100,9 +100,34 @@ service cloud.firestore {
              data.uid is string && data.createdAt is timestamp;
     }
 
+    function isValidWallpaper() {
+      let data = request.resource.data;
+      return hasRequiredFields(['id', 'type', 'url']) &&
+             data.id is string && data.id.size() < 100 &&
+             data.type in ['image', 'video', 'stars'] &&
+             data.url is string && data.url.size() < 2000 &&
+             (!('name' in data) || (data.name is string && data.name.size() < 100)) &&
+             (!('category' in data) || (data.category is string && data.category.size() < 100)) &&
+             (!('thumbnail' in data) || (data.thumbnail is string && data.thumbnail.size() < 2000)) &&
+             (!('isPremium' in data) || (data.isPremium is bool));
+    }
+
+    function isValidId(id) {
+       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
+
+    function isAdmin() {
+      return isAuthenticated() && (request.auth.token.email in ['ilyasuly.isakhan@gmail.com', 'momyn.halal@gmail.com']);
+    }
+
+    match /wallpapers/{wallpaperId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() && isValidWallpaper();
+    }
 
     match /friend_requests/{requestId} {
       allow read: if isAuthenticated() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);

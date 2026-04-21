@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
@@ -12,7 +13,7 @@ interface QuranVerseLiveProps {
   isSettingsOpen?: boolean;
 }
 
-export const QuranVerseLive: React.FC<QuranVerseLiveProps> = ({ 
+export const QuranVerseLive = React.memo<QuranVerseLiveProps>(({ 
   onSettingsToggle,
   showSettingsManaged = false,
   isSettingsOpen = false
@@ -136,9 +137,10 @@ export const QuranVerseLive: React.FC<QuranVerseLiveProps> = ({
       )}
     </div>
   );
-};
+});
 
-export const QuranSettings: React.FC<{ onClose?: () => void }> = ({ onClose }) => {
+export const QuranSettings = React.memo<{ onClose?: () => void }>(({ onClose }) => {
+  const { t } = useTranslation();
   const { 
     surahNumber, setSurahNumber, 
     level, setLevel, 
@@ -148,7 +150,8 @@ export const QuranSettings: React.FC<{ onClose?: () => void }> = ({ onClose }) =
     surahInfo, 
     nextSurah, prevSurah,
     isPlayingAudio, toggleAudio,
-    reciters, reciterId, setReciterId
+    reciters, reciterId, setReciterId,
+    surahList
   } = useQuran();
 
   const fonts = [
@@ -172,45 +175,44 @@ export const QuranSettings: React.FC<{ onClose?: () => void }> = ({ onClose }) =
         <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
           <Button 
             variant="ghost" 
-            size="icon-xs" 
+            size="sm" 
             title="Дауыстап оқу"
             disabled={isTajweedEnabled}
             onClick={(e) => { e.stopPropagation(); toggleAudio(); }} 
             className={cn(
-              "rounded-md h-7 w-7 transition-colors shrink-0 mr-1",
+              "rounded-md h-7 min-w-[50px] transition-colors shrink-0 mr-1 flex items-center justify-center gap-1.5 px-2",
               isPlayingAudio 
                 ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground" 
                 : "text-muted-foreground",
               isTajweedEnabled && "opacity-20 cursor-not-allowed grayscale"
             )}
           >
-            {isPlayingAudio ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+            {isPlayingAudio ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </Button>
           <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 border-l border-zinc-200 dark:border-zinc-800 pl-1.5 ml-0.5">
-            <span className="text-[9px] font-bold text-muted-foreground uppercase shrink-0">Қари:</span>
+            <span className="text-[9px] font-black text-muted-foreground uppercase shrink-0 tracking-tighter">{t('quran_reciter')}:</span>
             <Select value={reciterId.toString()} onValueChange={(val) => setReciterId(parseInt(val, 10))}>
               <SelectTrigger className="h-8 border-0 bg-transparent text-[11px] font-bold px-2 shadow-none focus:ring-0 max-w-[150px] truncate hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors flex items-center gap-1">
                 <SelectValue placeholder="Таңдау" />
               </SelectTrigger>
-              <SelectContent align="start" className="min-w-[220px] p-1 rounded-2xl border-zinc-200 dark:border-zinc-800 shadow-2xl backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95">
+              <SelectContent align="start" className="min-w-[220px] max-h-[300px] p-1 rounded-2xl border-zinc-200 dark:border-zinc-800 shadow-2xl backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95">
                 {reciters && reciters.length > 0 ? (
                   reciters.map(r => (
-                    <SelectItem key={r.id} value={r.id.toString()} className="py-3 px-4 text-sm cursor-pointer rounded-xl focus:bg-primary transition-all focus:text-primary-foreground mb-1 last:mb-0">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-bold text-sm tracking-tight">{r.translated_name?.name || r.reciter_name}</span>
-                        <div className="flex items-center gap-1.5">
+                    <SelectItem key={r.id} value={r.id.toString()} className="py-2 px-3 text-sm cursor-pointer rounded-xl focus:bg-primary transition-all focus:text-primary-foreground mb-0.5 last:mb-0">
+                      <div className="flex flex-col gap-0">
+                        <span className="font-bold text-xs tracking-tight">{r.translated_name?.name || r.reciter_name}</span>
+                        <div className="flex items-center gap-1">
                           {r.style && (
-                            <span className="text-[9px] px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 opacity-70 uppercase font-black tracking-widest">
+                            <span className="text-[8px] px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 opacity-70 uppercase font-black tracking-widest">
                               {r.style}
                             </span>
                           )}
-                          <span className="text-[9px] opacity-40 uppercase font-bold">Орындаушы</span>
                         </div>
                       </div>
                     </SelectItem>
                   ))
                 ) : (
-                  <SelectItem value="7" className="py-4 px-5 text-sm font-bold">Mishary Rashid Alafasy</SelectItem>
+                  <SelectItem value="7" className="py-2 px-3 text-xs font-bold">Mishary Rashid Alafasy</SelectItem>
                 )}
               </SelectContent>
             </Select>
@@ -219,15 +221,18 @@ export const QuranSettings: React.FC<{ onClose?: () => void }> = ({ onClose }) =
 
         {/* Font Family Control */}
         <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
-          <Type className="w-3 h-3 text-muted-foreground ml-1.5" />
+          <div className="flex items-center gap-1 ml-1.5 shrink-0">
+            <Type className="w-3 h-3 text-muted-foreground" />
+            <span className="text-[9px] font-black text-muted-foreground uppercase tracking-tighter">{t('quran_font')}</span>
+          </div>
           <Select value={fontFamily} onValueChange={(val) => setFontFamily(val)}>
             <SelectTrigger className="h-8 border-0 bg-transparent text-[10px] font-bold px-2 shadow-none focus:ring-0 w-[120px] truncate hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors flex items-center gap-1">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent align="start" className="min-w-[180px] p-1 rounded-2xl border-zinc-200 dark:border-zinc-800 shadow-2xl backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95">
+            <SelectContent align="start" className="min-w-[160px] p-1 rounded-2xl border-zinc-200 dark:border-zinc-800 shadow-2xl backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95">
               {fonts.map(f => (
-                <SelectItem key={f.id} value={f.id} className="py-2.5 px-4 text-xs cursor-pointer rounded-xl focus:bg-primary transition-all focus:text-primary-foreground mb-1 last:mb-0">
-                  <span className={cn(f.id, "text-base")}>{f.name}</span>
+                <SelectItem key={f.id} value={f.id} className="py-2 px-3 text-xs cursor-pointer rounded-xl focus:bg-primary transition-all focus:text-primary-foreground mb-0.5 last:mb-0">
+                  <span className={cn(f.id, "text-sm")}>{f.name.split(' ')[0]}</span>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -237,26 +242,46 @@ export const QuranSettings: React.FC<{ onClose?: () => void }> = ({ onClose }) =
         <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800 shrink-0">
           <Button 
             variant="ghost" 
-            size="icon-xs" 
-            title="Тәджуид"
+            size="sm" 
+            title={t('quran_tajweed')}
             disabled={isPlayingAudio}
             onClick={(e) => { e.stopPropagation(); setIsTajweedEnabled(!isTajweedEnabled); }} 
             className={cn(
-              "rounded-md h-7 w-7 transition-colors",
+              "rounded-md h-7 min-w-[50px] px-2 transition-colors flex items-center justify-center gap-1.5",
               isTajweedEnabled ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground" : "text-muted-foreground",
               isPlayingAudio && "opacity-20 cursor-not-allowed grayscale"
             )}
           >
             <Palette className="w-3.5 h-3.5" />
+            <span className="text-[9px] font-black uppercase tracking-tighter">{t('quran_tajweed')}</span>
           </Button>
         </div>
+
+        {/* Surah Selection */}
         <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
-          <Button variant="ghost" size="icon-xs" onClick={(e) => { e.stopPropagation(); prevSurah(); }} className="rounded-md h-7 w-7"><ChevronLeft className="w-3.5 h-3.5" /></Button>
-          <div className="min-w-[80px] px-2 text-center flex flex-col items-center justify-center">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase leading-none mb-0.5">Сүре {surahNumber}</span>
-            <span className="text-[10px] font-arabic font-bold leading-none truncate max-w-[70px] text-center">{surahInfo?.name}</span>
-          </div>
-          <Button variant="ghost" size="icon-xs" onClick={(e) => { e.stopPropagation(); nextSurah(); }} className="rounded-md h-7 w-7"><ChevronRight className="w-3.5 h-3.5" /></Button>
+           <Select value={surahNumber.toString()} onValueChange={(val) => setSurahNumber(parseInt(val, 10))}>
+            <SelectTrigger className="h-8 border-0 bg-transparent text-[10px] font-bold px-2 shadow-none focus:ring-0 min-w-[100px] hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors flex items-center justify-between gap-1">
+               <div className="flex items-center gap-1">
+                  <span className="text-primary font-black opacity-40">{surahNumber}.</span>
+                  <span className="truncate max-w-[80px]">{surahInfo?.name || t('loading')}</span>
+               </div>
+            </SelectTrigger>
+            <SelectContent align="start" className="min-w-[180px] max-h-[300px] p-1 rounded-2xl border-zinc-200 dark:border-zinc-800 shadow-2xl backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95">
+               {surahList && surahList.length > 0 ? (
+                 surahList.map(s => (
+                   <SelectItem key={s.id} value={s.id.toString()} className="py-2 px-3 text-xs cursor-pointer rounded-xl focus:bg-primary transition-all focus:text-primary-foreground mb-0.5 last:mb-0">
+                      <div className="flex items-center justify-between w-full gap-2">
+                        <span className="font-bold opacity-30 text-[10px]">{s.id}.</span>
+                        <span className="font-bold flex-1">{s.name_simple}</span>
+                        <span className="font-arabic text-sm opacity-60">{s.name_arabic}</span>
+                      </div>
+                   </SelectItem>
+                 ))
+               ) : (
+                 <SelectItem value={surahNumber.toString()} className="py-2 px-3 text-xs font-bold">{surahNumber}. {surahInfo?.name}</SelectItem>
+               )}
+            </SelectContent>
+          </Select>
         </div>
         
         {/* Speed Control */}
@@ -269,7 +294,7 @@ export const QuranSettings: React.FC<{ onClose?: () => void }> = ({ onClose }) =
             className="rounded-md h-7 w-7 disabled:opacity-30 disabled:cursor-not-allowed"
           ><Minus className="w-3.5 h-3.5" /></Button>
           <div className="flex flex-col items-center justify-center min-w-[32px]">
-            <span className="text-[7px] font-black uppercase text-muted-foreground leading-none mb-0.5">Speed</span>
+            <span className="text-[7px] font-black uppercase text-muted-foreground leading-none mb-0.5">{t('quran_speed')}</span>
             <div className={cn("text-center font-mono font-bold text-[10px] leading-none", isPlayingAudio && "opacity-50")}>{level}</div>
           </div>
           <Button 
@@ -289,9 +314,9 @@ export const QuranSettings: React.FC<{ onClose?: () => void }> = ({ onClose }) =
             onClick={(e) => { e.stopPropagation(); setFontSizeLevel(Math.max(fontSizeLevel - 1, 1)); }} 
             className="rounded-md h-7 w-7"
           ><Minus className="w-3.5 h-3.5" /></Button>
-          <div className="flex flex-col items-center justify-center min-w-[32px]">
-            <span className="text-[7px] font-black uppercase text-muted-foreground leading-none mb-0.5 flex flex-nowrap whitespace-nowrap">Font Size</span>
-            <div className="text-center font-mono font-bold text-[10px] leading-none">{fontSizeLevel}</div>
+          <div className="flex items-center justify-center min-w-[50px] px-1 gap-1 border-x border-zinc-200 dark:border-zinc-800 mx-1">
+            <span className="text-[10px] font-bold">{fontSizeLevel}</span>
+            <span className="text-[7px] font-black uppercase text-muted-foreground tracking-tighter">{t('quran_font')}</span>
           </div>
           <Button 
             variant="ghost" 
@@ -303,7 +328,7 @@ export const QuranSettings: React.FC<{ onClose?: () => void }> = ({ onClose }) =
       </div>
     </motion.div>
   );
-};
+});
 
 const HeavyTajweedText = React.memo<{ text: string, isHtml?: boolean }>(({ text, isHtml }) => {
   if (!text) return null;
@@ -452,8 +477,8 @@ const PersistentScroller: React.FC<{
       <div 
         className="absolute inset-0 z-20 pointer-events-none"
         style={{
-          maskImage: 'linear-gradient(to right, transparent, black 45%, black 55%, transparent)',
-          WebkitMaskImage: 'linear-gradient(to right, transparent, black 45%, black 55%, transparent)'
+          maskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+          WebkitMaskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)'
         }}
       >
         <div 
