@@ -91,7 +91,8 @@ export function PrayerRadarChart({ data, activeStatus = "all", gender }: PrayerR
             />
             <PolarAngleAxis
               dataKey="prayer"
-              tick={({ x, y, cx, cy, index }) => {
+              tick={(props: any) => {
+                const { x, y, cx, cy, index } = props;
                 // Push icons further from center
                 const radiusOffset = 1.2; // 20% further
                 const newX = cx + (x - cx) * radiusOffset;

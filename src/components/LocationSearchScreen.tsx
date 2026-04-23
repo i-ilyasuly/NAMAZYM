@@ -19,7 +19,7 @@ export function LocationSearchScreen({ isOpen, onClose, onLocationSelected }: Lo
   const [isSearching, setIsSearching] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeout = useRef<number | null>(null);
 
   const {
     searchHistory,
@@ -52,7 +52,7 @@ export function LocationSearchScreen({ isOpen, onClose, onLocationSelected }: Lo
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&addressdetails=1&limit=5&accept-language=${lang}`
       );
-      if (!response.ok) throw new Error("Network response was not ok");
+      if (!response.ok) throw new Error(`OSM API Error: ${response.status}`);
       const data = await response.json();
       setResults(data);
     } catch (error) {
@@ -71,7 +71,7 @@ export function LocationSearchScreen({ isOpen, onClose, onLocationSelected }: Lo
       clearTimeout(searchTimeout.current);
     }
 
-    searchTimeout.current = setTimeout(() => {
+    searchTimeout.current = window.setTimeout(() => {
       searchLocation(value);
     }, 500);
   };

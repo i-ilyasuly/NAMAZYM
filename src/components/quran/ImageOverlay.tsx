@@ -30,11 +30,14 @@ export function ImageOverlay({
   useEffect(() => {
     const infoUrl = quranMushaf.ayahInfo || '/ayahinfo.json';
     fetch(infoUrl)
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : Promise.reject('Invalid'))
       .then(setAyahBoxes)
       .catch(() => {
         if (infoUrl !== '/ayahinfo.json') {
-          fetch('/ayahinfo.json').then(r => r.json()).then(setAyahBoxes).catch(console.error);
+          fetch('/ayahinfo.json')
+            .then(r => r.ok ? r.json() : Promise.reject('Invalid'))
+            .then(setAyahBoxes)
+            .catch(console.error);
         }
       });
   }, [quranMushaf]);

@@ -321,7 +321,7 @@ export const QuranSettings = React.memo<{ onClose?: () => void }>(({ onClose }) 
           <Button 
             variant="ghost" 
             size="icon-xs" 
-            onClick={(e) => { e.stopPropagation(); setFontSizeLevel(Math.min(fontSizeLevel + 1, 5)); }} 
+            onClick={(e) => { e.stopPropagation(); setFontSizeLevel(Math.min(fontSizeLevel + 1, 10)); }} 
             className="rounded-md h-7 w-7"
           ><Plus className="w-3.5 h-3.5" /></Button>
         </div>
@@ -352,20 +352,11 @@ const PersistentScroller: React.FC<{
     isTajweedEnabled, fontSizeLevel, fontFamily
   } = useQuran();
 
-  // Mapping level 1-5 to size classes
-  // Level 5: text-4xl md:text-5xl
-  // Level 4: text-3xl md:text-4xl
-  // Level 3: text-2xl md:text-3xl
-  // Level 2: text-xl md:text-2xl
-  // Level 1: text-lg md:text-xl
-  const sizeClass = useMemo(() => {
-    switch (fontSizeLevel) {
-      case 1: return "text-lg md:text-xl";
-      case 2: return "text-xl md:text-2xl";
-      case 3: return "text-2xl md:text-3xl";
-      case 4: return "text-3xl md:text-4xl";
-      case 5: default: return "text-4xl md:text-5xl";
-    }
+  // 🔴 CRITICAL ALGORITHM: DO NOT MODIFY! FONT SCALING LOGIC 🔴
+  // Smoothly maps levels 1-10 to sizes. Modifying this breaks the UI flow.
+  // DO NOT change unless user explicitly requests font size logic changes.
+  const currentFontSize = useMemo(() => {
+    return `${16 + (fontSizeLevel * 2)}px`;
   }, [fontSizeLevel]);
 
   const textRef = useRef<HTMLDivElement>(null);
@@ -463,9 +454,9 @@ const PersistentScroller: React.FC<{
         className={cn(
           "absolute opacity-0 pointer-events-none whitespace-nowrap leading-none pt-4 pb-4",
           fontFamily,
-          sizeClass,
           isTajweedEnabled && "tajweed-active"
         )}
+        style={{ fontSize: currentFontSize, transition: 'font-size 0.3s ease-out' }}
         ref={textRef}
       >
         <PureTajweed text={text} isHtml={true} />
@@ -490,9 +481,8 @@ const PersistentScroller: React.FC<{
         >
           <div className={cn(
             "whitespace-nowrap leading-none pt-4 pb-4 text-zinc-900 dark:text-zinc-100 px-[50vw]",
-            fontFamily,
-            sizeClass
-          )}>
+            fontFamily
+          )} style={{ fontSize: currentFontSize, transition: 'font-size 0.3s ease-out' }}>
             <PureTajweed text={text} isHtml={true} />
           </div>
         </div>

@@ -15,6 +15,7 @@ import { SettingsScreen } from "./components/SettingsScreen";
 import { StatisticsScreen } from "./components/StatisticsScreen";
 import { QuranScreen } from "./components/QuranScreen";
 import { HomeScreen } from "./components/HomeScreen";
+import { TestScreen } from "./components/test-native/TestScreen";
 import WallpaperGallery from "./components/WallpaperGallery";
 import { UsernameSetupModal } from "./components/auth/UsernameSetupModal";
 import { GlobalBackground } from "./components/layout/GlobalBackground";
@@ -68,7 +69,7 @@ function AppContent() {
 
       <main className={cn(
         "flex-1 flex flex-col max-w-full mx-auto w-full overflow-y-auto no-scrollbar border-x border-muted/10",
-        ctrl.activeTab === "home" || ctrl.activeTab === "quran" ? "p-0" : "p-4 pt-6"
+        ctrl.activeTab === "home" || ctrl.activeTab === "quran" || ctrl.activeTab === "test" ? "p-0" : "p-4 pt-6"
       )}>
         {ctrl.activeTab === "home" && (
           <HomeScreen
@@ -178,6 +179,10 @@ function AppContent() {
 
         {ctrl.activeTab === "leaderboard" && (
           <LeaderboardScreen />
+        )}
+
+        {ctrl.activeTab === "test" && (
+          <TestScreen />
         )}
       </main>
 

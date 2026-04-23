@@ -74,7 +74,7 @@ export function PrayerStackedBarChart({ data, gender }: PrayerStackedBarChartPro
               tick={({ x, y, payload, index }) => {
                 const prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
                 return (
-                  <g transform={`translate(${x - 10}, ${y + 10})`} style={{ pointerEvents: 'none' }}>
+                  <g transform={`translate(${Number(x) - 10}, ${Number(y) + 10})`} style={{ pointerEvents: 'none' }}>
                     <foreignObject width="20" height="20">
                       <div className="flex items-center justify-center w-full h-full">
                         {getPrayerTimeIcon(prayers[index] ?? 'default')}

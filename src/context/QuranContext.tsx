@@ -1,468 +1,555 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
-interface QuranContextType {
+type QuranScope = 'home' | 'test';
+
+interface QuranState {
   surahNumber: number;
-  setSurahNumber: (id: number) => void;
   level: number;
-  setLevel: (l: number) => void;
+  isTajweedEnabled: boolean;
+  fontFamily: string;
+  fontSizeLevel: number;
+  isPaused: boolean;
+  pos: number;
+  textWidth: number;
   quranText: string;
   quranTajweedText: string;
-  isTajweedEnabled: boolean;
-  setIsTajweedEnabled: (v: boolean) => void;
-  fontFamily: string;
-  setFontFamily: (v: string) => void;
-  fontSizeLevel: number;
-  setFontSizeLevel: (v: number) => void;
-  isPaused: boolean;
-  togglePause: () => void;
   surahInfo: { id: number; name: string } | null;
   isLoading: boolean;
   error: boolean;
-  getPos: () => number;
-  setPos: (pos: number) => void;
-  setIsDragging: (dragging: boolean) => void;
-  textWidth: number;
-  setTextWidth: (w: number) => void;
-  pixelsPerSecond: number;
-  nextSurah: () => void;
-  prevSurah: () => void;
-  fetchSurah: (id: number) => Promise<void>;
+  audioTimestamps: any[];
+  audioSegments: any[];
+  audioData: any | null;
+  reciterId: number;
+  savedAudioTime?: number;
+}
+
+interface QuranContextType {
+  // Scoped access
+  getScopeState: (scope: QuranScope) => QuranState;
   
-  // Audio
+  setSurahNumber: (id: number, scope?: QuranScope) => void;
+  setLevel: (l: number, scope?: QuranScope) => void;
+  setIsTajweedEnabled: (v: boolean, scope?: QuranScope) => void;
+  setFontFamily: (v: string, scope?: QuranScope) => void;
+  setFontSizeLevel: (v: number, scope?: QuranScope) => void;
+  togglePause: (scope?: QuranScope) => void;
+  setPos: (pos: number, scope?: QuranScope) => void;
+  getPos: (scope?: QuranScope) => number;
+  setIsDragging: (dragging: boolean, scope?: QuranScope) => void;
+  setTextWidth: (w: number, scope?: QuranScope) => void;
+  
+  nextSurah: (scope?: QuranScope) => void;
+  prevSurah: (scope?: QuranScope) => void;
+  fetchSurah: (id: number, scope?: QuranScope, forcedReciterId?: number) => Promise<void>;
+  
+  // Shared audio engine
   audioPlayerRef: React.MutableRefObject<HTMLAudioElement | null>;
   isPlayingAudio: boolean;
-  toggleAudio: () => void;
-  audioTimestamps: any[];
+  activeAudioScope: QuranScope | null;
+  toggleAudio: (scope?: QuranScope) => void;
   reciters: any[];
+  setReciterId: (id: number, scope?: QuranScope) => void;
   reciterId: number;
-  setReciterId: (id: number) => void;
   surahList: any[];
+
+  // Helpers
+  toArabicNumber: (n: number) => string;
+
+  // Compatibility (maps to Home scope)
+  surahNumber: number;
+  level: number;
+  quranText: string;
+  quranTajweedText: string;
+  isTajweedEnabled: boolean;
+  fontFamily: string;
+  fontSizeLevel: number;
+  isPaused: boolean;
+  surahInfo: { id: number; name: string } | null;
+  isLoading: boolean;
+  error: boolean;
+  textWidth: number;
+  audioTimestamps: any[];
 }
 
 const QuranContext = createContext<QuranContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'namazym_quran_state';
-const getInitialState = () => {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : null;
-  } catch (e) { return null; }
-};
-const initialState = getInitialState();
+const STORAGE_KEY_PREFIX = 'namazym_quran_v3_';
+
+const createDefaultState = (scope: QuranScope): QuranState => ({
+  surahNumber: 1,
+  level: 3,
+  isTajweedEnabled: false,
+  fontFamily: 'font-quran-amiri',
+  fontSizeLevel: 5,
+  isPaused: false,
+  pos: 0,
+  textWidth: 0,
+  quranText: "",
+  quranTajweedText: "",
+  surahInfo: null,
+  isLoading: true,
+  error: false,
+  audioTimestamps: [],
+  audioSegments: [],
+  audioData: null,
+  reciterId: parseInt(localStorage.getItem(`quran_reciter_id_${scope}`) || '7', 10)
+});
 
 export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [surahNumber, setSurahNumberState] = useState(initialState?.surahNumber || 1);
-  const [level, setLevel] = useState(initialState?.level || 3);
-  const [quranText, setQuranText] = useState("");
-  const [quranTajweedText, setQuranTajweedText] = useState("");
-  const [isTajweedEnabled, setIsTajweedEnabled] = useState(initialState?.isTajweedEnabled || false);
-  const [fontFamily, setFontFamily] = useState(initialState?.fontFamily || 'font-quran-amiri');
-  const [fontSizeLevel, setFontSizeLevel] = useState(initialState?.fontSizeLevel || 5);
-  const [isPaused, setIsPaused] = useState(initialState?.isPaused || false);
-  const isPausedRef = useRef(isPaused);
-  const [surahInfo, setSurahInfo] = useState<{ id: number; name: string } | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [textWidth, setTextWidth] = useState(0);
-  const posRef = useRef(0);
-  const textWidthRef = useRef(0);
-  const isDraggingRef = useRef(false);
-
-  // Audio setup
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
-  const [audioTimestamps, setAudioTimestampsState] = useState<any[]>([]);
-  const audioTimestampsRef = useRef<any[]>([]);
-  const [reciters, setReciters] = useState<any[]>([]);
-  const [surahList, setSurahList] = useState<any[]>([]);
-  const [reciterId, setReciterIdState] = useState<number>(() => {
-    return parseInt(localStorage.getItem('quran_reciter_id') || '7', 10);
+  const [scopes, setScopes] = useState<Record<QuranScope, QuranState>>({
+    home: createDefaultState('home'),
+    test: createDefaultState('test')
   });
 
-  const setReciterId = useCallback((id: number) => {
-    setReciterIdState(id);
-    localStorage.setItem('quran_reciter_id', id.toString());
-  }, []);
-
-  const setAudioTimestamps = useCallback((data: any[]) => {
-    audioTimestampsRef.current = data;
-    setAudioTimestampsState(data);
-  }, []);
-
-  // Initialize audio element once
+  const scopesRef = useRef(scopes);
   useEffect(() => {
-    const audio = new Audio();
-    audio.onplay = () => setIsPlayingAudio(true);
-    audio.onpause = () => setIsPlayingAudio(false);
-    audio.onended = () => {
-      setIsPlayingAudio(false);
-      nextSurah();
-    };
-    audioPlayerRef.current = audio;
+    scopesRef.current = scopes;
+  }, [scopes]);
+
+  const posRefs = useRef<Record<QuranScope, number>>({ home: 0, test: 0 });
+  const textWidthRefs = useRef<Record<QuranScope, number>>({ home: 0, test: 0 });
+  const isPausedRefs = useRef<Record<QuranScope, boolean>>({ home: false, test: false });
+  const isDraggingRefs = useRef<Record<QuranScope, boolean>>({ home: false, test: false });
+  const audioTimestampsRefs = useRef<Record<QuranScope, any[]>>({ home: [], test: [] });
+  const audioSegmentsRefs = useRef<Record<QuranScope, any[]>>({ home: [], test: [] });
+
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const activeAudioScopeRef = useRef<QuranScope | null>(null);
+  const [activeAudioScope, setActiveAudioScope] = useState<QuranScope | null>(null);
+  
+  const [reciters, setReciters] = useState<any[]>([]);
+  const [surahList, setSurahList] = useState<any[]>([]);
+  
+  const updateScopeState = useCallback((scope: QuranScope, updates: Partial<QuranState>) => {
+    setScopes(prev => ({
+      ...prev,
+      [scope]: { ...prev[scope], ...updates }
+    }));
     
-    // Fetch available reciters
-    fetch('https://api.quran.com/api/v4/resources/recitations')
-      .then(res => res.json())
-      .then(data => {
-        if (data.recitations) {
-          setReciters(data.recitations);
-        }
-      })
-      .catch(console.error);
-      
-    // Fetch chapters list
-    const lng = localStorage.getItem('i18nextLng') || 'kk';
-    const apiLng = lng === 'ru' ? 'ru' : 'en'; // default to en if not ru for Kazakh for now
-    fetch(`https://api.quran.com/api/v4/chapters?language=${apiLng}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.chapters) {
-          setSurahList(data.chapters);
-        }
-      })
-      .catch(console.error);
-      
-    return () => {
-      audio.pause();
-      audio.src = "";
-    };
+    if (updates.isPaused !== undefined) isPausedRefs.current[scope] = updates.isPaused;
+    if (updates.textWidth !== undefined) textWidthRefs.current[scope] = updates.textWidth;
+    if (updates.audioTimestamps !== undefined) audioTimestampsRefs.current[scope] = updates.audioTimestamps;
+    if (updates.audioSegments !== undefined) audioSegmentsRefs.current[scope] = updates.audioSegments;
+    
+    if (updates.fontSizeLevel !== undefined || updates.isTajweedEnabled !== undefined || updates.fontFamily !== undefined) {
+       layerRef.current = null;
+       verseElRef.current = null;
+       lastVerseRef.current = null;
+    }
   }, []);
 
   const toArabicNumber = useCallback((n: number) => {
     return n.toString().replace(/\d/g, d => '٠١٢٣٤٥٦٧٨٩'[parseInt(d)]);
   }, []);
-  const containerWidthRef = useRef(0);
-  const lastTimeRef = useRef(0);
-  const requestRef = useRef<number>(0);
-  const isInitializedRef = useRef(false);
-  const initialPosRef = useRef<number | null>(initialState?.pos !== undefined ? initialState.pos : null);
 
-  // Update refs when state changes for animation loop
-  useEffect(() => {
-    textWidthRef.current = textWidth;
-    if (textWidth > 0 && !isInitializedRef.current) {
-      if (initialPosRef.current !== null) {
-        posRef.current = initialPosRef.current;
-        initialPosRef.current = null;
-      } else {
-        posRef.current = 0; 
-      }
-      isInitializedRef.current = true;
-    }
-  }, [textWidth]);
-
-  useEffect(() => {
-    isPausedRef.current = isPaused;
-  }, [isPaused]);
-
-  useEffect(() => {
-    const saveState = () => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        surahNumber,
-        isPaused,
-        level,
-        fontSizeLevel,
-        fontFamily,
-        isTajweedEnabled,
-        pos: posRef.current
-      }));
-    };
-    const interval = setInterval(saveState, 2000);
-    window.addEventListener('beforeunload', saveState);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('beforeunload', saveState);
-    };
-  }, [surahNumber, isPaused, level, fontSizeLevel, fontFamily, isTajweedEnabled]);
-
-  const handleSetTextWidth = useCallback((w: number) => {
-    setTextWidth(prev => (prev === w ? prev : w));
-  }, []);
-
-  const handleSetIsDragging = useCallback((dragging: boolean) => {
-    isDraggingRef.current = dragging;
-  }, []);
-
-  useEffect(() => {
-    const updateContainerWidth = () => {
-      containerWidthRef.current = window.innerWidth;
-    };
-    updateContainerWidth();
-    window.addEventListener('resize', updateContainerWidth);
-    return () => window.removeEventListener('resize', updateContainerWidth);
-  }, []);
-
-  const pixelsPerSecond = React.useMemo(() => {
-    // Current requirement: Max speed (level 10) should equal previous level 5 speed (165px).
-    // Start at a base speed of 30px/s, up to 165px/s at level 10.
-    return 30 + (level - 1) * 15;
-  }, [level]);
-
-  const fetchSurah = useCallback(async (id: number, activeReciterId: number = reciterId) => {
-    setIsLoading(true);
-    setError(false);
+  const fetchSurah = useCallback(async (id: number, scope: QuranScope = 'home', forcedReciterId?: number) => {
+    updateScopeState(scope, { isLoading: true, error: false, surahNumber: id });
     try {
-      const infoResPromise = fetch(`https://api.quran.com/api/v4/chapters/${id}`).then(r => r.json());
-      const versesResPromise = fetch(`https://api.quran.com/api/v4/quran/verses/uthmani?chapter_number=${id}&per_page=300`).then(r => r.json());
-      const tajweedResPromise = fetch(`https://api.quran.com/api/v4/quran/verses/uthmani_tajweed?chapter_number=${id}&per_page=300`).then(r => r.json());
-      // Dynamic Recitation based on reciterId
-      const audioResPromise = fetch(`https://api.quran.com/api/v4/chapter_recitations/${activeReciterId}/${id}?segments=true`).then(r => r.json());
+      const activeReciterId = forcedReciterId || scopesRef.current[scope].reciterId;
       
-      const [infoData, versesData, tajweedData, audioData] = await Promise.all([infoResPromise, versesResPromise, tajweedResPromise, audioResPromise]);
-      
-      if (versesData.verses && infoData.chapter && tajweedData.verses) {
-        if (audioData?.audio_file?.audio_url && audioPlayerRef.current) {
-          const wasPlaying = !audioPlayerRef.current.paused;
-          audioPlayerRef.current.src = audioData.audio_file.audio_url;
-          audioPlayerRef.current.load();
-          
-          if (audioData?.audio_file?.timestamps) {
-            setAudioTimestamps(audioData.audio_file.timestamps);
+      // We fetch primary surah data in parallel
+      const [infoRes, versesRes, tajweedRes] = await Promise.all([
+        fetch(`https://api.quran.com/api/v4/chapters/${id}`).then(r => r.ok ? r.json() : Promise.reject(`Chapters API Error: ${r.status}`)),
+        fetch(`https://api.quran.com/api/v4/quran/verses/uthmani?chapter_number=${id}&per_page=300`).then(r => r.ok ? r.json() : Promise.reject(`Verses API Error: ${r.status}`)),
+        fetch(`https://api.quran.com/api/v4/quran/verses/uthmani_tajweed?chapter_number=${id}&per_page=300`).then(r => r.ok ? r.json() : Promise.reject(`Tajweed API Error: ${r.status}`))
+      ]);
+
+      // Then we try to fetch audio, but don't let it block or break the surah data state
+      let audioRes = null;
+      try {
+        const audioFetchWithSegments = await fetch(`https://api.quran.com/api/v4/chapter_recitations/${activeReciterId}/${id}?segments=true`);
+        if (audioFetchWithSegments.ok) {
+          audioRes = await audioFetchWithSegments.json();
+        } else {
+          // If 404 or other error, fallback to without segments
+          const audioFetchNoSegments = await fetch(`https://api.quran.com/api/v4/chapter_recitations/${activeReciterId}/${id}`);
+          if (audioFetchNoSegments.ok) {
+            audioRes = await audioFetchNoSegments.json();
           } else {
-            setAudioTimestamps([]);
+            console.warn(`Could not load audio for reciter ${activeReciterId} and chapter ${id}`);
           }
-          
-          // MAGIC SYNC: Sync audio to current visual position when reciter changes
-          const currentPos = posRef.current;
-          const layer = document.getElementById('quran-measurement-layer');
-          const tw = textWidthRef.current;
-          
-          let targetSeekMs = 0;
-          if (layer && tw > 0 && audioData?.audio_file?.timestamps) {
-            const verses = layer.querySelectorAll('[data-verse]');
-            for (let i = 0; i < verses.length; i++) {
-              const el = verses[i] as HTMLElement;
-              const dStart = tw - (el.offsetLeft + el.offsetWidth);
-              const dEnd = dStart + el.offsetWidth;
-              
-              if (currentPos >= dStart && currentPos <= dEnd) {
-                const verseIndex = parseInt(el.getAttribute('data-verse') || "1", 10) - 1;
-                const timestamps = audioData.audio_file.timestamps;
-                
-                if (timestamps && timestamps[verseIndex]) {
-                  const vObj = timestamps[verseIndex];
-                  const progress = (currentPos - dStart) / el.offsetWidth;
-                  const verseDuration = vObj.timestamp_to - vObj.timestamp_from;
-                  targetSeekMs = vObj.timestamp_from + (progress * verseDuration);
-                }
-                break;
-              }
-            }
+        }
+      } catch (audioErr) {
+        console.error("Audio fetch error:", audioErr);
+      }
+      
+      if (versesRes.verses && infoRes.chapter && tajweedRes.verses) {
+        const audioUrl = audioRes?.audio_file?.audio_url;
+        const timestamps = audioRes?.audio_file?.timestamps || [];
+        const segments: any[] = [];
+        
+        timestamps.forEach((t: any, idx: number) => {
+          if (t.segments) {
+            t.segments.forEach((s: any) => {
+              // Flatten to: [verseId, wordIdx, timeStart, timeEnd]
+              segments.push([idx + 1, s[0], s[1], s[2]]);
+            });
           }
-
-          const onMetadata = () => {
-             if (targetSeekMs > 0) {
-               audioPlayerRef.current!.currentTime = targetSeekMs / 1000;
-             }
-             if (wasPlaying) {
-               audioPlayerRef.current!.play().catch(console.error);
-             }
-             audioPlayerRef.current!.removeEventListener('loadedmetadata', onMetadata);
-          };
-
-          audioPlayerRef.current.addEventListener('loadedmetadata', onMetadata);
+        });
+        
+        if (activeAudioScopeRef.current === scope && audioPlayerRef.current) {
+          audioPlayerRef.current.src = audioUrl;
+          audioPlayerRef.current.load();
         }
 
-        // Generate Tajweed Text
-        const fullTajweedText = tajweedData.verses.map((v: any, i: number) => {
+        const fullTajweedText = tajweedRes.verses.map((v: any, i: number) => {
           const cleanTajweed = v.text_uthmani_tajweed.replace(/<span class=["']?end["']?>.*?<\/span>/g, '').trim();
           return `<span data-verse="${i + 1}">${cleanTajweed} ﴿${toArabicNumber(v.verse_number || i + 1)}﴾</span>`;
         }).join("  ");
 
-        // RESTORE ORIGINAL CLEAN UTHMANI
-        // This is what the reciters follow perfectly in their segments.
-        const fullPlainText = versesData.verses.map((v: any, i: number) => {
+        const fullPlainText = versesRes.verses.map((v: any, i: number) => {
           return `<span data-verse="${i + 1}">${v.text_uthmani} ﴿${toArabicNumber(v.verse_number || i + 1)}﴾</span>`;
         }).join("  ");
 
-        setQuranText(fullPlainText);
-        setQuranTajweedText(fullTajweedText);
-        setSurahInfo({ id: infoData.chapter.id, name: infoData.chapter.name_arabic });
-        // Initial Pos Reset
-        if (initialPosRef.current === null) {
-          posRef.current = 0;
-        }
-        // DO NOT reset textWidth to 0 here, let the ResizeObserver update it.
-        // This prevents the "disappearing text" act during surah transitions.
-        isInitializedRef.current = false;
+        updateScopeState(scope, {
+          quranText: fullPlainText,
+          quranTajweedText: fullTajweedText,
+          surahInfo: { id: infoRes.chapter.id, name: infoRes.chapter.name_arabic },
+          isLoading: false,
+          audioTimestamps: timestamps,
+          audioSegments: segments,
+          audioData: audioRes,
+          ...(forcedReciterId ? { reciterId: forcedReciterId } : {})
+        });
       }
     } catch (err) {
       console.error(err);
-      setError(true);
-    } finally {
-      setIsLoading(false);
+      updateScopeState(scope, { isLoading: false, error: true });
     }
-  }, [reciterId]);
+  }, [scopes, toArabicNumber, updateScopeState]);
 
-  const nextSurah = useCallback(() => {
-    initialPosRef.current = null;
-    posRef.current = 0;
-    setSurahNumberState(prev => (prev < 114 ? prev + 1 : 1));
-  }, []);
-  
-  const prevSurah = useCallback(() => {
-    initialPosRef.current = null;
-    posRef.current = 0;
-    setSurahNumberState(prev => (prev > 1 ? prev - 1 : 114));
-  }, []);
-
+  // LOAD ON MOUNT & STATIC DATA
   useEffect(() => {
-    fetchSurah(surahNumber);
-  }, [surahNumber, fetchSurah]);
+    // 1. Static resources
+    fetch('https://api.quran.com/api/v4/resources/recitations').then(r => r.ok ? r.json() : Promise.reject('Invalid')).then(d => d.recitations && setReciters(d.recitations)).catch(() => {});
+    fetch('https://api.quran.com/api/v4/chapters?language=en').then(r => r.ok ? r.json() : Promise.reject('Invalid')).then(d => d.chapters && setSurahList(d.chapters)).catch(() => {});
 
-  const togglePause = useCallback(() => {
-    setIsPaused(prev => {
-      const next = !prev;
-      // Audio stops if paused, but doesn't auto-start when playing unless explicitly requested
-      if (next && audioPlayerRef.current && !audioPlayerRef.current.paused) {
-        audioPlayerRef.current.pause();
+    // 2. Audio element creation
+    const audio = new Audio();
+    audio.onplay = () => setIsPlayingAudio(true);
+    audio.onpause = () => setIsPlayingAudio(false);
+    audio.onended = () => {
+      setIsPlayingAudio(false);
+      const scope = activeAudioScopeRef.current;
+      if (scope) {
+        // This is tricky because we need the latest scopes state. 
+        // We'll use a functional state update or another ref if needed.
+        // For now, nextSurah is safer if it's aware of the scope.
       }
-      return next;
-    });
-  }, []);
+    };
+    audioPlayerRef.current = audio;
 
-  const toggleAudio = useCallback(() => {
-    if (!audioPlayerRef.current?.src) return;
-    if (audioPlayerRef.current.paused) {
-      
-      // MAGIC SYNC: Find where the scroll (posRef.current) is visually 
-      // and seek the audio to that exact verse/moment!
-      const currentPos = posRef.current;
-      const layer = document.getElementById('quran-measurement-layer');
-      const textWidth = textWidthRef.current;
-      
-      if (layer && textWidth > 0 && audioTimestampsRef.current.length > 0) {
-        const verses = layer.querySelectorAll('[data-verse]');
-        for (let i = 0; i < verses.length; i++) {
-          const el = verses[i] as HTMLElement;
-          const dStart = textWidth - (el.offsetLeft + el.offsetWidth);
-          const dEnd = dStart + el.offsetWidth;
-          
-          if (currentPos >= dStart && currentPos <= dEnd) {
-            const verseIndex = parseInt(el.getAttribute('data-verse') || "1", 10) - 1;
-            const timestamps = audioTimestampsRef.current;
-            
-            if (timestamps && timestamps[verseIndex]) {
-              const vObj = timestamps[verseIndex];
-              const progress = (currentPos - dStart) / el.offsetWidth;
-              const verseDuration = vObj.timestamp_to - vObj.timestamp_from;
-              
-              const seekMs = vObj.timestamp_from + (progress * verseDuration);
-              audioPlayerRef.current.currentTime = seekMs / 1000;
-            }
-            break;
+    // 3. Rehydrate and initial fetch
+    const hydrate = async () => {
+      const scopesToLoad = ['home' as QuranScope, 'test' as QuranScope];
+      for (const scope of scopesToLoad) {
+        let currentSurah = 1;
+        try {
+          const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}${scope}`);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            currentSurah = parsed.surahNumber || 1;
+            posRefs.current[scope] = parsed.pos || 0;
+            updateScopeState(scope, { ...parsed, isLoading: true, isPaused: true });
           }
-        }
+        } catch (e) {}
+        await fetchSurah(currentSurah, scope);
       }
+    };
+    hydrate();
 
-      audioPlayerRef.current.play().catch(console.error);
-      setIsPaused(false); // Make sure scrolling resumes when audio plays
-    } else {
-      audioPlayerRef.current.pause();
-    }
-  }, []);
+    return () => { audio.pause(); audio.src = ""; };
+  }, []); // Run ONCE on mount
 
-  // Global Background Animation Loop
+  // Periodically persist the current state (surah, position, preferences) to localStorage
+  useEffect(() => {
+    const timer = setInterval(() => {
+      (['home', 'test'] as QuranScope[]).forEach(scope => {
+         const st = scopes[scope];
+         if (st.quranText) { // only save if loaded
+           localStorage.setItem(`${STORAGE_KEY_PREFIX}${scope}`, JSON.stringify({
+              surahNumber: st.surahNumber,
+              level: st.level,
+              isTajweedEnabled: st.isTajweedEnabled,
+              fontFamily: st.fontFamily,
+              fontSizeLevel: st.fontSizeLevel,
+              isPaused: isPausedRefs.current[scope],
+              pos: posRefs.current[scope],
+              reciterId: st.reciterId,
+           }));
+         }
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [scopes, STORAGE_KEY_PREFIX]);
+
+  const requestRef = useRef<number>(0);
+  const lastTimeRef = useRef(0);
+  const lastAudioTimeRefs = useRef<Record<string, number>>({ home: -1, test: -1 });
+  const smoothAudioTimeRefs = useRef<Record<string, number>>({ home: 0, test: 0 });
+
+  // 🔴 CRITICAL ALGORITHM: DO NOT MODIFY! AUDIO SYNC LOGIC 🔴
+  // Smooth predictive interpolation ensures 60fps scrolling while syncing with audio.
+  // Modify ONLY if user explicitly requests changes to the audio sync engine.
+  const layerRef = useRef<HTMLElement | null>(null);
+  const lastVerseRef = useRef<string | null>(null);
+  const verseElRef = useRef<HTMLElement | null>(null);
+
   const animate = useCallback((time: number) => {
-    if (isDraggingRef.current || isPausedRef.current) {
-      lastTimeRef.current = time; // stay updated, prevent jump
-    } else if (lastTimeRef.current !== 0) {
-      // If audio is active we sync to timestamps strictly
-      const timestamps = audioTimestampsRef.current;
-      const audioIsActive = audioPlayerRef.current && !audioPlayerRef.current.paused && timestamps.length > 0 && textWidthRef.current > 0;
+    const deltaTime = (time - lastTimeRef.current) / 1000;
+    
+    (Object.keys(scopesRef.current) as QuranScope[]).forEach(scope => {
+      // Direct visual update
+      const visualId = scope === 'test' ? 'quran-visual-native' : 'quran-visual-layer';
+      const visualEl = document.getElementById(visualId);
+      if (visualEl) {
+        visualEl.style.transform = `translateX(${posRefs.current[scope]}px)`;
+      }
 
-      if (audioIsActive && textWidthRef.current > 0) {
-        const currentMs = audioPlayerRef.current!.currentTime * 1000;
-        let currentVerseIndex = 0;
-        let found = false;
-        
-        for (let i = 0; i < timestamps.length; i++) {
-          if (currentMs >= timestamps[i].timestamp_from && currentMs <= timestamps[i].timestamp_to) {
-            currentVerseIndex = i;
-            found = true;
-            break;
-          }
-        }
-        
-        if (!found) {
-           currentVerseIndex = timestamps.findIndex((t: any) => t.timestamp_from > currentMs);
-           if (currentVerseIndex === -1) currentVerseIndex = timestamps.length - 1;
-           else if (currentVerseIndex > 0) currentVerseIndex -= 1;
-        }
-
-        const currentVerseObj = timestamps[currentVerseIndex];
-        const verseEl = document.querySelector(`#quran-measurement-layer [data-verse="${currentVerseIndex + 1}"]`) as HTMLElement;
-        
-        if (verseEl && currentVerseObj) {
-          let progress = 0;
-          if (currentMs >= currentVerseObj.timestamp_from && currentMs <= currentVerseObj.timestamp_to) {
-            const duration = currentVerseObj.timestamp_to - currentVerseObj.timestamp_from;
-            if (duration > 0) {
-              progress = (currentMs - currentVerseObj.timestamp_from) / duration;
-            }
-          } else if (currentMs > currentVerseObj.timestamp_to) {
-            progress = 1;
-          }
-
-          // Offset the progress so that the middle of the currently spoken word tends to be in the center
-          // In RTL, the text starts exactly at right edge of container and padding makes "0" center.
-          // By adding a small visually pleasing offset (like shifting center slightly so we read comfortably)
-          // We can just calculate the precise pixel distance from right edge
-          // Target visual position: distance from right edge
-          const dFromRight = textWidthRef.current - (verseEl.offsetLeft + verseEl.offsetWidth);
-          const verseVisualPosition = dFromRight + progress * verseEl.offsetWidth;
-          
-          const diff = verseVisualPosition - posRef.current;
-          // SNAP SENSITIVITY: 10px instead of 20px. 
-          // If misalignment is more than 10px, jump immediately instead of sliding.
-          if (Math.abs(diff) > 10) {
-            posRef.current = verseVisualPosition;
-          } else {
-            // INCREASED CORRECTION SPEED
-            posRef.current += diff * 0.3; 
-          }
-        }
+      if (isDraggingRefs.current[scope] || isPausedRefs.current[scope]) {
+        // No auto-scroll
       } else {
-        // Normal constant speed scrolling
-        const deltaTime = (time - lastTimeRef.current) / 1000;
-        posRef.current += pixelsPerSecond * deltaTime;
-      }
+        const audioIsActive = audioPlayerRef.current && !audioPlayerRef.current.paused && activeAudioScopeRef.current === scope;
+        const currentLevel = scopesRef.current[scope].level;
+        const pixelsPerSecond = 30 + (currentLevel - 1) * 15;
+        const currentTextWidth = textWidthRefs.current[scope];
 
-      // Cycle surah if finished
-      if (textWidthRef.current > 0 && posRef.current >= textWidthRef.current) {
-        nextSurah();
+        if (audioIsActive && currentTextWidth > 0) {
+          const rawMs = audioPlayerRef.current!.currentTime * 1000;
+          
+          if (lastAudioTimeRefs.current[scope] !== rawMs) {
+            lastAudioTimeRefs.current[scope] = rawMs;
+            if (Math.abs(smoothAudioTimeRefs.current[scope] - rawMs) > 500) {
+              smoothAudioTimeRefs.current[scope] = rawMs;
+            }
+          } else {
+            smoothAudioTimeRefs.current[scope] += deltaTime * 1000;
+          }
+          
+          const deltaSync = (rawMs - smoothAudioTimeRefs.current[scope]);
+          if (deltaSync < 0 && Math.abs(deltaSync) < 100) {
+             // Stay
+          } else if (Math.abs(deltaSync) > 5) {
+             smoothAudioTimeRefs.current[scope] += deltaSync * 0.08;
+          }
+          
+          const currentMs = smoothAudioTimeRefs.current[scope];
+          const currentStamps = audioTimestampsRefs.current[scope];
+          const currentSegs = audioSegmentsRefs.current[scope];
+
+          if (currentStamps.length > 0) {
+            let verseIdx = currentStamps.findIndex((t: any) => currentMs >= t.timestamp_from && currentMs <= t.timestamp_to);
+             if (verseIdx === -1) {
+                const nextIdx = currentStamps.findIndex((t: any) => t.timestamp_from > currentMs);
+                verseIdx = nextIdx === -1 ? currentStamps.length - 1 : Math.max(0, nextIdx - 1);
+            }
+
+            const queryId = scope === 'test' ? 'quran-measurement-native' : 'quran-measurement-layer';
+            if (!layerRef.current || (layerRef.current as any).queryId !== queryId) {
+               layerRef.current = document.getElementById(queryId);
+               if (layerRef.current) (layerRef.current as any).queryId = queryId;
+               verseElRef.current = null;
+            }
+
+            const verseIdStr = (verseIdx + 1).toString();
+            if (lastVerseRef.current !== verseIdStr || !verseElRef.current || !layerRef.current) {
+               lastVerseRef.current = verseIdStr;
+               verseElRef.current = layerRef.current?.querySelector(`[data-verse="${verseIdStr}"]`) as HTMLElement;
+            }
+
+            const verseEl = verseElRef.current;
+            const verseObj = currentStamps[verseIdx];
+
+            if (verseEl && verseObj && currentTextWidth > 0) {
+              let progress = 0;
+              const vSegs = currentSegs.filter((s: any) => s[0].toString() === verseIdStr);
+              
+              if (vSegs.length > 0) {
+                const cur = vSegs.find((s: any) => currentMs >= s[2] && currentMs <= s[3]);
+                if (cur) {
+                  progress = (cur[1] - 1 + ((currentMs - cur[2]) / (cur[3] - cur[2] || 1))) / vSegs.length;
+                } else {
+                  const last = vSegs[vSegs.length - 1];
+                  if (currentMs > last[3]) progress = 1;
+                }
+              } else {
+                progress = (currentMs - verseObj.timestamp_from) / (verseObj.timestamp_to - verseObj.timestamp_from || 1);
+              }
+
+              const dRight = currentTextWidth - (verseEl.offsetLeft + verseEl.offsetWidth);
+              const target = dRight + Math.min(1.02, Math.max(-0.02, progress)) * verseEl.offsetWidth;
+              
+              const diff = target - posRefs.current[scope];
+              if (Math.abs(diff) > 300) {
+                 posRefs.current[scope] = target;
+              } else {
+                 posRefs.current[scope] += diff * 0.15; 
+              }
+            }
+          }
+        } else {
+          posRefs.current[scope] += pixelsPerSecond * deltaTime;
+        }
+
+        if (currentTextWidth > 0 && posRefs.current[scope] >= currentTextWidth) {
+          const next = scopesRef.current[scope].surahNumber < 114 ? scopesRef.current[scope].surahNumber + 1 : 1;
+          fetchSurah(next, scope);
+          posRefs.current[scope] = 0;
+        }
       }
-    }
+    });
+
     lastTimeRef.current = time;
     requestRef.current = requestAnimationFrame(animate);
-  }, [pixelsPerSecond, nextSurah]);
+  }, [fetchSurah]);
 
   useEffect(() => {
     requestRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(requestRef.current);
   }, [animate]);
 
-  return (
-    <QuranContext.Provider value={{
-      surahNumber, setSurahNumber: setSurahNumberState, level, setLevel, 
-      quranText, quranTajweedText, isTajweedEnabled, setIsTajweedEnabled, 
-      fontFamily, setFontFamily,
-      fontSizeLevel, setFontSizeLevel,
-      isPaused, togglePause,
-      surahInfo,
-      isLoading, error, getPos: useCallback(() => posRef.current, []), setPos: useCallback((v: number) => { posRef.current = v; }, []), setIsDragging: handleSetIsDragging,
-      textWidth, setTextWidth: handleSetTextWidth,
-      pixelsPerSecond, nextSurah, prevSurah, fetchSurah,
-      audioPlayerRef, isPlayingAudio, toggleAudio, audioTimestamps,
-      reciters, reciterId, setReciterId, surahList
-    }}>
-      {children}
-    </QuranContext.Provider>
-  );
+  const value: QuranContextType = {
+    getScopeState: (s) => scopes[s],
+    setSurahNumber: (id, s = 'home') => { posRefs.current[s] = 0; fetchSurah(id, s); },
+    setLevel: (l, s = 'home') => updateScopeState(s, { level: l }),
+    setIsTajweedEnabled: (v, s = 'home') => updateScopeState(s, { isTajweedEnabled: v }),
+    setFontFamily: (v, s = 'home') => updateScopeState(s, { fontFamily: v }),
+    setFontSizeLevel: (v, s = 'home') => updateScopeState(s, { fontSizeLevel: v }),
+    togglePause: (s = 'home') => updateScopeState(s, { isPaused: !scopes[s].isPaused }),
+    setPos: (v, s = 'home') => { posRefs.current[s] = v; },
+    getPos: (s = 'home') => posRefs.current[s],
+    setIsDragging: (d, s = 'home') => { isDraggingRefs.current[s] = d; },
+    setTextWidth: (w, s = 'home') => { textWidthRefs.current[s] = w; updateScopeState(s, { textWidth: w }); },
+    nextSurah: (s = 'home') => { const next = scopes[s].surahNumber < 114 ? scopes[s].surahNumber + 1 : 1; posRefs.current[s] = 0; fetchSurah(next, s); },
+    prevSurah: (s = 'home') => { const prev = scopes[s].surahNumber > 1 ? scopes[s].surahNumber - 1 : 114; posRefs.current[s] = 0; fetchSurah(prev, s); },
+    fetchSurah,
+    audioPlayerRef,
+    isPlayingAudio,
+    activeAudioScope,
+    toggleAudio: (scope = 'home') => {
+      if (!audioPlayerRef.current) return;
+      if (activeAudioScopeRef.current === scope && !audioPlayerRef.current.paused) {
+        audioPlayerRef.current.pause();
+        return;
+      }
+      
+      const sData = scopes[scope];
+      if (!sData.audioTimestamps || sData.audioTimestamps.length === 0) {
+        // If data not loaded yet, don't try to sync audio
+        console.warn('Audio data not ready for scope', scope);
+      }
+
+      // If we are switching scopes, ensure the src is correct
+      const targetUrl = sData.audioData?.audio_file?.audio_url;
+      if (targetUrl) {
+         // Resolve relative URLs or compare endings to prevent unnecessary reload
+         const currentSrc = audioPlayerRef.current.src || '';
+         const targetPath = targetUrl.startsWith('//') ? targetUrl.substring(2) : targetUrl;
+         if (!currentSrc.includes(targetPath)) {
+            audioPlayerRef.current.src = targetUrl;
+            audioPlayerRef.current.load();
+         }
+      }
+
+      activeAudioScopeRef.current = scope;
+      setActiveAudioScope(scope);
+      
+      const queryId = scope === 'test' ? 'quran-measurement-native' : 'quran-measurement-layer';
+      const l = document.getElementById(queryId);
+      const pos = posRefs.current[scope];
+      const tw = textWidthRefs.current[scope];
+      const stamps = audioTimestampsRefs.current[scope];
+      if (l && tw > 0 && stamps.length > 0) {
+        const verses = l.querySelectorAll('[data-verse]');
+        for (let i = 0; i < verses.length; i++) {
+          const el = verses[i] as HTMLElement;
+          const dS = tw - (el.offsetLeft + el.offsetWidth);
+          const dE = dS + el.offsetWidth;
+          if (pos >= dS && pos <= dE) {
+             const vIdx = parseInt(el.getAttribute('data-verse') || "1", 10) - 1;
+             const vObj = stamps[vIdx];
+             if (vObj) {
+               const progress = (pos - dS) / (el.offsetWidth || 1);
+               const targetTime = (vObj.timestamp_from + progress * (vObj.timestamp_to - vObj.timestamp_from)) / 1000;
+               try {
+                 audioPlayerRef.current.currentTime = targetTime;
+               } catch (e) {
+                 audioPlayerRef.current.onloadedmetadata = () => {
+                   if (audioPlayerRef.current) {
+                     audioPlayerRef.current.currentTime = targetTime;
+                     audioPlayerRef.current.onloadedmetadata = null;
+                   }
+                 };
+               }
+             }
+             break;
+          }
+        }
+      }
+      audioPlayerRef.current.play().catch(console.error);
+      updateScopeState(scope, { isPaused: false });
+    },
+    reciters,
+    reciterId: scopes.home.reciterId, 
+    setReciterId: (id, s = 'home') => {
+       updateScopeState(s, { reciterId: id });
+       localStorage.setItem(`quran_reciter_id_${s}`, id.toString());
+       fetchSurah(scopes[s].surahNumber, s, id);
+    },
+    surahList,
+    toArabicNumber,
+    // Compatibilities mapping to Home
+    surahNumber: scopes.home.surahNumber,
+    level: scopes.home.level,
+    quranText: scopes.home.quranText,
+    quranTajweedText: scopes.home.quranTajweedText,
+    isTajweedEnabled: scopes.home.isTajweedEnabled,
+    fontFamily: scopes.home.fontFamily,
+    fontSizeLevel: scopes.home.fontSizeLevel,
+    isPaused: scopes.home.isPaused,
+    surahInfo: scopes.home.surahInfo,
+    isLoading: scopes.home.isLoading,
+    error: scopes.home.error,
+    textWidth: scopes.home.textWidth,
+    audioTimestamps: scopes.home.audioTimestamps
+  };
+
+  return <QuranContext.Provider value={value}>{children}</QuranContext.Provider>;
 };
 
-export const useQuran = () => {
+export const useQuran = (scope: QuranScope = 'home') => {
   const context = useContext(QuranContext);
   if (!context) throw new Error('useQuran must be used within a QuranProvider');
-  return context;
+  
+  // Use a ref so the bound functions can be completely stable and always access the latest context
+  const contextRef = useRef(context);
+  contextRef.current = context;
+  
+  const boundActions = useMemo(() => ({
+    setSurahNumber: (id: number) => contextRef.current.setSurahNumber(id, scope),
+    setLevel: (l: number) => contextRef.current.setLevel(l, scope),
+    setIsTajweedEnabled: (v: boolean) => contextRef.current.setIsTajweedEnabled(v, scope),
+    setFontFamily: (v: string) => contextRef.current.setFontFamily(v, scope),
+    setFontSizeLevel: (v: number) => contextRef.current.setFontSizeLevel(v, scope),
+    togglePause: () => contextRef.current.togglePause(scope),
+    setPos: (v: number) => contextRef.current.setPos(v, scope),
+    getPos: () => contextRef.current.getPos(scope),
+    setIsDragging: (d: boolean) => contextRef.current.setIsDragging(d, scope),
+    setTextWidth: (w: number) => contextRef.current.setTextWidth(w, scope),
+    nextSurah: () => contextRef.current.nextSurah(scope),
+    prevSurah: () => contextRef.current.prevSurah(scope),
+    fetchSurah: (id: number, forcedReciterId?: number) => contextRef.current.fetchSurah(id, scope, forcedReciterId),
+    toggleAudio: () => contextRef.current.toggleAudio(scope),
+    setReciterId: (id: number) => contextRef.current.setReciterId(id, scope)
+  }), [scope]);
+
+  // Create a proxy/wrapper for the selected scope to make it feel like the standard hook
+  const scopeState = context.getScopeState(scope);
+  
+  return {
+    ...context,
+    ...scopeState,
+    ...boundActions
+  };
 };

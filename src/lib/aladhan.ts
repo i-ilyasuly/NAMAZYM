@@ -11,6 +11,7 @@ export async function fetchPrayerTimes(lat: number, lng: number, date: Date, met
     // tune параметрінің реті: Imsak,Fajr,Sunrise,Dhuhr,Asr,Sunset,Maghrib,Isha,Midnight
     const tune = "0,0,-3,3,3,3,3,0,0"; 
     const response = await fetch(`https://api.aladhan.com/v1/timings/${dateStr}?latitude=${lat}&longitude=${lng}&method=${method}&school=1&tune=${tune}`);
+    if (!response.ok) throw new Error(`Prayer Times API Error: ${response.status}`);
     const data = await response.json();
     
     if (data && data.data && data.data.timings) {

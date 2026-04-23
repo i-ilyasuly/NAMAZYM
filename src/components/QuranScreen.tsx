@@ -34,6 +34,7 @@ export function QuranScreen() {
     const fetchChapters = async () => {
       try {
         const response = await fetch('https://api.quran.com/api/v4/chapters?language=kk');
+        if (!response.ok) throw new Error(`Chapters List Error: ${response.status}`);
         const data = await response.json();
         setChapters(data.chapters);
       } catch (error) {
@@ -56,6 +57,7 @@ export function QuranScreen() {
         setIsLoadingVerses(true);
         try {
           const res = await fetch(`https://api.quran.com/api/v4/verses/by_chapter/${selectedChapter.id}?language=kk&words=false&translations=222&fields=text_uthmani&per_page=300`, { signal: controller.signal });
+          if (!res.ok) throw new Error(`Verses Load Error: ${res.status}`);
           const data = await res.json();
           setChapterVerses(data.verses);
         } catch (err: any) {
@@ -77,19 +79,23 @@ export function QuranScreen() {
 
     try {
       const res = await fetch(`https://api.quran.com/api/v4/verses/by_chapter/${chapter.id}?mushaf=${quranMushaf.mushafId}&fields=page_number,verse_number&per_page=1`);
-      const data = await res.json();
-      if (data.verses && data.verses[0]) {
-        targetPage = data.verses[0].page_number;
+      if (res.ok) {
+        const data = await res.json();
+        if (data.verses && data.verses[0]) {
+          targetPage = data.verses[0].page_number;
+        }
       }
     } catch (e) {}
 
     if (verseToScroll) {
       try {
         const res = await fetch(`https://api.quran.com/api/v4/verses/by_chapter/${chapter.id}?mushaf=${quranMushaf.mushafId}&fields=page_number,verse_number&per_page=300`);
-        const data = await res.json();
-        const vInfo = data.verses.find((v: any) => v.verse_number === verseToScroll);
-        if (vInfo && vInfo.page_number) {
-          targetPage = vInfo.page_number;
+        if (res.ok) {
+          const data = await res.json();
+          const vInfo = data.verses.find((v: any) => v.verse_number === verseToScroll);
+          if (vInfo && vInfo.page_number) {
+            targetPage = vInfo.page_number;
+          }
         }
       } catch (e) {}
     }

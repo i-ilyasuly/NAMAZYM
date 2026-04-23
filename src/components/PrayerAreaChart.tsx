@@ -102,7 +102,7 @@ export function PrayerAreaChart({ data, activeStatus, gender }: PrayerAreaChartP
                 else if (prayerKey.includes("құптан") || prayerKey.includes("isha")) prayerId = 'isha';
 
                 return (
-                  <foreignObject x={x - 10} y={y + 8} width={20} height={20}>
+                  <foreignObject x={Number(x) - 10} y={Number(y) + 8} width={20} height={20}>
                     <div className="flex items-center justify-center w-full h-full">
                       {getPrayerTimeIcon(prayerId)}
                     </div>

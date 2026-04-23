@@ -129,7 +129,7 @@ export const HomeScreen = React.memo(({
       </div>
 
       <div className="flex-1 flex flex-col w-full max-w-3xl mx-auto px-4 pt-2 pb-20 relative">
-        <div style={{ zoom: PRAYER_BLOCK_SCALE } as React.CSSProperties} className="flex flex-col flex-1 max-w-[285px] sm:max-w-[360px] mx-auto w-full">
+        <div style={{ zoom: PRAYER_BLOCK_SCALE } as React.CSSProperties} className="flex flex-col flex-1 max-w-full mx-auto w-full sm:max-w-sm">
           <CalendarStrip
             showQuranSettings={showQuranSettings}
             setShowQuranSettings={setShowQuranSettings}

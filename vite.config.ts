@@ -12,10 +12,12 @@ export default defineConfig(({mode}) => {
     ],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      global: 'window', // Add global polyfill for react-native-web or older libraries
     },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
+        'react-native': 'react-native-web',
       },
     },
     server: {

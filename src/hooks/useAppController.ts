@@ -36,7 +36,7 @@ export function useAppController() {
     }
   }, [calculationMethod, setPrayerTimes, setCalculationMethod]);
 
-  const [activeTab, setActiveTab] = useState<"home" | "calendar" | "statistics" | "settings" | "analytics" | "leaderboard" | "quran">("home");
+  const [activeTab, setActiveTab] = useState<string>("home");
   const [selectedPrayer, setSelectedPrayer] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [expandedPrayerId, setExpandedPrayerId] = useState<string | null>(null);
@@ -147,7 +147,7 @@ export function useAppController() {
   }, []);
 
   const historyMap = useMemo(() => {
-    const map: Record<string, Record<string, PrayerStatus[]>> = {};
+    const map: Record<string, PrayerStatus[]> = {};
     const baseDate = new Date(selectedDate);
     const dateRange = Array.from({ length: 7 }).map((_, i) => format(subDays(baseDate, 6 - i), "yyyy-MM-dd"));
 
