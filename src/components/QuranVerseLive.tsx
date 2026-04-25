@@ -139,7 +139,7 @@ export const QuranVerseLive = React.memo<QuranVerseLiveProps>(({
   );
 });
 
-export const QuranSettings = React.memo<{ onClose?: () => void }>(({ onClose }) => {
+export const QuranSettings = React.memo<{ onClose?: () => void, scope?: 'home' | 'test' }>(({ onClose, scope = 'home' }) => {
   const { t } = useTranslation();
   const { 
     surahNumber, setSurahNumber, 
@@ -152,7 +152,7 @@ export const QuranSettings = React.memo<{ onClose?: () => void }>(({ onClose }) 
     isPlayingAudio, toggleAudio,
     reciters, reciterId, setReciterId,
     surahList
-  } = useQuran();
+  } = useQuran(scope);
 
   const fonts = [
     { id: 'font-quran-uthmanic', name: 'Uthmanic (Official)' },

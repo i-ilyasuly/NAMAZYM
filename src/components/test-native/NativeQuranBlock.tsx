@@ -7,15 +7,15 @@ const MemoizedQuranText = React.memo(({
   htmlContent, webFontClass, calculatedFontSize, isTajweedEnabled, isDarkMode, textRef, viewRef
 }: any) => {
   const commonStyles: any = {
-    direction: 'rtl',
     fontSize: `${calculatedFontSize}px`,
-    lineHeight: '1.2',
+    lineHeight: '1',
     letterSpacing: '0px',
     whiteSpace: 'nowrap',
+    fontFamily: `var(--${webFontClass}), serif`,
   };
 
   return (
-    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, direction: 'rtl', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }} dir="rtl">
       {/* Invisible Measurement Layer */}
       <div
         id="quran-measurement-native"
@@ -26,14 +26,15 @@ const MemoizedQuranText = React.memo(({
           position: 'absolute', 
           opacity: 0, 
           pointerEvents: 'none',
-          whiteSpace: 'nowrap',
+          top: -9999,
+          right: 0,
           width: 'max-content',
         }}
         dangerouslySetInnerHTML={{ __html: htmlContent || '' }}
       />
 
-      {/* Visible River Layer */}
-      <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center' }}>
+      {/* Visible Stream Layer */}
+      <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, display: 'flex', alignItems: 'center', overflow: 'visible' }}>
         <div
           id="quran-visual-native"
           ref={viewRef}
@@ -46,6 +47,9 @@ const MemoizedQuranText = React.memo(({
             paddingLeft: '50vw', 
             paddingRight: '50vw',
             willChange: 'transform',
+            flexShrink: 0,
+            minWidth: 'max-content',
+            zIndex: 1,
           }}
           dangerouslySetInnerHTML={{ __html: htmlContent || '' }}
         />
@@ -114,9 +118,7 @@ export const NativeQuranBlock = ({
     if (Platform.OS !== 'web' || !textRef.current) return;
     const observer = new ResizeObserver((entries) => {
       for (let entry of entries) {
-        // Measurement element is absolute, it might not expand naturally if constrained.
-        // Usually scrollWidth is accurate for single-line whitespace-nowrap overflow text
-        setTextWidth(entry.target.scrollWidth);
+        setTextWidth((entry.target as HTMLElement).offsetWidth);
       }
     });
     observer.observe(textRef.current);
@@ -148,6 +150,13 @@ export const NativeQuranBlock = ({
       }
     })
   ).current;
+
+  // Ensure surah is loaded
+  useEffect(() => {
+    if (!quranText && !isLoading && !error) {
+      fetchSurah(surahNumber);
+    }
+  }, [quranText, isLoading, error, fetchSurah, surahNumber]);
 
   // 🔴 CRITICAL ALGORITHM: DO NOT MODIFY! FONT SCALING LOGIC 🔴
   // Match Home screen font size levels smoothly (1-10)
@@ -196,17 +205,16 @@ export const NativeQuranBlock = ({
     >
       {Platform.OS === 'web' ? (
         <View style={styles.webContainer}>
-          {containerWidth > 0 && (
-            <MemoizedQuranText
-              htmlContent={htmlContent}
-              webFontClass={webFontClass}
-              calculatedFontSize={calculatedFontSize}
-              isTajweedEnabled={isTajweedEnabled}
-              isDarkMode={isDarkMode}
-              textRef={textRef}
-              viewRef={viewRef}
-            />
-          )}
+          <MemoizedQuranText
+            key={`${webFontClass}-${isTajweedEnabled}`}
+            htmlContent={htmlContent}
+            webFontClass={webFontClass}
+            calculatedFontSize={calculatedFontSize}
+            isTajweedEnabled={isTajweedEnabled}
+            isDarkMode={isDarkMode}
+            textRef={textRef}
+            viewRef={viewRef}
+          />
         </View>
       ) : (
         <View style={styles.centerContainer}>
@@ -262,6 +270,7 @@ const getQuranStyles = (isDarkMode: boolean, customFontFamily: string, fontSize:
       position: 'absolute',
       top: 0, bottom: 0, left: 0, right: 0,
       overflow: 'hidden',
+      zIndex: 1,
     },
     centerContainer: {
       width: '100%',

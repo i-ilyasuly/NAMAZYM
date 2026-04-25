@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { BarChart2, Settings, Calendar, Activity, Users, BookOpen } from 'lucide-react';
+import { BarChart2, Settings, Calendar, Activity, Users, BookOpen, Clock } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { AppLogo } from './AppLogo';
 
@@ -17,6 +17,7 @@ export function BottomNav({ activeTab, onChange }: BottomNavProps) {
     { id: 'quran', icon: BookOpen, label: 'Құран' },
     { id: 'analytics', icon: Activity, label: 'NI' },
     { id: 'statistics', icon: BarChart2, label: t('statistics') },
+    { id: 'clock', icon: Clock, label: 'Сағат' },
     { id: 'settings', icon: Settings, label: t('settings') },
     { id: 'test', icon: Calendar, label: 'Тест' },
   ] as const;

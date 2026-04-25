@@ -429,26 +429,29 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     activeAudioScope,
     toggleAudio: (scope = 'home') => {
       if (!audioPlayerRef.current) return;
-      if (activeAudioScopeRef.current === scope && !audioPlayerRef.current.paused) {
-        audioPlayerRef.current.pause();
+      
+      const player = audioPlayerRef.current;
+      
+      // If we are already playing in this scope, pause it
+      if (activeAudioScopeRef.current === scope && !player.paused) {
+        player.pause();
         return;
       }
       
       const sData = scopes[scope];
       if (!sData.audioTimestamps || sData.audioTimestamps.length === 0) {
-        // If data not loaded yet, don't try to sync audio
         console.warn('Audio data not ready for scope', scope);
       }
 
-      // If we are switching scopes, ensure the src is correct
+      // If we are switching scopes or starting fresh, ensure the src is correct
       const targetUrl = sData.audioData?.audio_file?.audio_url;
       if (targetUrl) {
-         // Resolve relative URLs or compare endings to prevent unnecessary reload
-         const currentSrc = audioPlayerRef.current.src || '';
+         const currentSrc = player.src || '';
          const targetPath = targetUrl.startsWith('//') ? targetUrl.substring(2) : targetUrl;
          if (!currentSrc.includes(targetPath)) {
-            audioPlayerRef.current.src = targetUrl;
-            audioPlayerRef.current.load();
+            player.pause(); // Ensure we are paused before changing src
+            player.src = targetUrl;
+            player.load();
          }
       }
 
@@ -460,6 +463,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const pos = posRefs.current[scope];
       const tw = textWidthRefs.current[scope];
       const stamps = audioTimestampsRefs.current[scope];
+      
       if (l && tw > 0 && stamps.length > 0) {
         const verses = l.querySelectorAll('[data-verse]');
         for (let i = 0; i < verses.length; i++) {
@@ -472,14 +476,21 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
              if (vObj) {
                const progress = (pos - dS) / (el.offsetWidth || 1);
                const targetTime = (vObj.timestamp_from + progress * (vObj.timestamp_to - vObj.timestamp_from)) / 1000;
-               try {
-                 audioPlayerRef.current.currentTime = targetTime;
-               } catch (e) {
-                 audioPlayerRef.current.onloadedmetadata = () => {
-                   if (audioPlayerRef.current) {
-                     audioPlayerRef.current.currentTime = targetTime;
-                     audioPlayerRef.current.onloadedmetadata = null;
-                   }
+               
+               const setTimeSafe = () => {
+                 try {
+                   player.currentTime = targetTime;
+                 } catch (e) {
+                   console.warn("Retrying currentTime set...");
+                 }
+               };
+
+               if (player.readyState >= 1) {
+                 setTimeSafe();
+               } else {
+                 player.onloadedmetadata = () => {
+                   setTimeSafe();
+                   player.onloadedmetadata = null;
                  };
                }
              }
@@ -487,7 +498,19 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
       }
-      audioPlayerRef.current.play().catch(console.error);
+      
+      // Fix: Wrap play() in a promise check to prevent interruption errors
+      const playPromise = player.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          if (error.name === 'AbortError') {
+            console.log('Playback was interrupted, this is expected if toggle is fast.');
+          } else {
+            console.error('Playback error:', error);
+          }
+        });
+      }
+      
       updateScopeState(scope, { isPaused: false });
     },
     reciters,

@@ -1,0 +1,1430 @@
+
+// ============================================================================
+// FILE: src/context/QuranContext.tsx
+// ============================================================================
+
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+
+type QuranScope = 'home' | 'test';
+
+interface QuranState {
+  surahNumber: number;
+  level: number;
+  isTajweedEnabled: boolean;
+  fontFamily: string;
+  fontSizeLevel: number;
+  isPaused: boolean;
+  pos: number;
+  textWidth: number;
+  quranText: string;
+  quranTajweedText: string;
+  surahInfo: { id: number; name: string } | null;
+  isLoading: boolean;
+  error: boolean;
+  audioTimestamps: any[];
+  audioSegments: any[];
+  audioData: any | null;
+  reciterId: number;
+  savedAudioTime?: number;
+}
+
+interface QuranContextType {
+  // Scoped access
+  getScopeState: (scope: QuranScope) => QuranState;
+  
+  setSurahNumber: (id: number, scope?: QuranScope) => void;
+  setLevel: (l: number, scope?: QuranScope) => void;
+  setIsTajweedEnabled: (v: boolean, scope?: QuranScope) => void;
+  setFontFamily: (v: string, scope?: QuranScope) => void;
+  setFontSizeLevel: (v: number, scope?: QuranScope) => void;
+  togglePause: (scope?: QuranScope) => void;
+  setPos: (pos: number, scope?: QuranScope) => void;
+  getPos: (scope?: QuranScope) => number;
+  setIsDragging: (dragging: boolean, scope?: QuranScope) => void;
+  setTextWidth: (w: number, scope?: QuranScope) => void;
+  
+  nextSurah: (scope?: QuranScope) => void;
+  prevSurah: (scope?: QuranScope) => void;
+  fetchSurah: (id: number, scope?: QuranScope, forcedReciterId?: number) => Promise<void>;
+  
+  // Shared audio engine
+  audioPlayerRef: React.MutableRefObject<HTMLAudioElement | null>;
+  isPlayingAudio: boolean;
+  activeAudioScope: QuranScope | null;
+  toggleAudio: (scope?: QuranScope) => void;
+  reciters: any[];
+  setReciterId: (id: number, scope?: QuranScope) => void;
+  reciterId: number;
+  surahList: any[];
+
+  // Helpers
+  toArabicNumber: (n: number) => string;
+
+  // Compatibility (maps to Home scope)
+  surahNumber: number;
+  level: number;
+  quranText: string;
+  quranTajweedText: string;
+  isTajweedEnabled: boolean;
+  fontFamily: string;
+  fontSizeLevel: number;
+  isPaused: boolean;
+  surahInfo: { id: number; name: string } | null;
+  isLoading: boolean;
+  error: boolean;
+  textWidth: number;
+  audioTimestamps: any[];
+}
+
+const QuranContext = createContext<QuranContextType | undefined>(undefined);
+
+const STORAGE_KEY_PREFIX = 'namazym_quran_v3_';
+
+const createDefaultState = (scope: QuranScope): QuranState => ({
+  surahNumber: 1,
+  level: 3,
+  isTajweedEnabled: false,
+  fontFamily: 'font-quran-amiri',
+  fontSizeLevel: 5,
+  isPaused: false,
+  pos: 0,
+  textWidth: 0,
+  quranText: "",
+  quranTajweedText: "",
+  surahInfo: null,
+  isLoading: true,
+  error: false,
+  audioTimestamps: [],
+  audioSegments: [],
+  audioData: null,
+  reciterId: parseInt(localStorage.getItem(`quran_reciter_id_${scope}`) || '7', 10)
+});
+
+export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [scopes, setScopes] = useState<Record<QuranScope, QuranState>>({
+    home: createDefaultState('home'),
+    test: createDefaultState('test')
+  });
+
+  const scopesRef = useRef(scopes);
+  useEffect(() => {
+    scopesRef.current = scopes;
+  }, [scopes]);
+
+  const posRefs = useRef<Record<QuranScope, number>>({ home: 0, test: 0 });
+  const textWidthRefs = useRef<Record<QuranScope, number>>({ home: 0, test: 0 });
+  const isPausedRefs = useRef<Record<QuranScope, boolean>>({ home: false, test: false });
+  const isDraggingRefs = useRef<Record<QuranScope, boolean>>({ home: false, test: false });
+  const audioTimestampsRefs = useRef<Record<QuranScope, any[]>>({ home: [], test: [] });
+  const audioSegmentsRefs = useRef<Record<QuranScope, any[]>>({ home: [], test: [] });
+
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const activeAudioScopeRef = useRef<QuranScope | null>(null);
+  const [activeAudioScope, setActiveAudioScope] = useState<QuranScope | null>(null);
+  
+  const [reciters, setReciters] = useState<any[]>([]);
+  const [surahList, setSurahList] = useState<any[]>([]);
+  
+  const updateScopeState = useCallback((scope: QuranScope, updates: Partial<QuranState>) => {
+    setScopes(prev => ({
+      ...prev,
+      [scope]: { ...prev[scope], ...updates }
+    }));
+    
+    if (updates.isPaused !== undefined) isPausedRefs.current[scope] = updates.isPaused;
+    if (updates.textWidth !== undefined) textWidthRefs.current[scope] = updates.textWidth;
+    if (updates.audioTimestamps !== undefined) audioTimestampsRefs.current[scope] = updates.audioTimestamps;
+    if (updates.audioSegments !== undefined) audioSegmentsRefs.current[scope] = updates.audioSegments;
+    
+    if (updates.fontSizeLevel !== undefined || updates.isTajweedEnabled !== undefined || updates.fontFamily !== undefined) {
+       layerRef.current = null;
+       verseElRef.current = null;
+       lastVerseRef.current = null;
+    }
+  }, []);
+
+  const toArabicNumber = useCallback((n: number) => {
+    return n.toString().replace(/\d/g, d => '٠١٢٣٤٥٦٧٨٩'[parseInt(d)]);
+  }, []);
+
+  const fetchSurah = useCallback(async (id: number, scope: QuranScope = 'home', forcedReciterId?: number) => {
+    updateScopeState(scope, { isLoading: true, error: false, surahNumber: id });
+    try {
+      const activeReciterId = forcedReciterId || scopesRef.current[scope].reciterId;
+      
+      // We fetch primary surah data in parallel
+      const [infoRes, versesRes, tajweedRes] = await Promise.all([
+        fetch(`https://api.quran.com/api/v4/chapters/${id}`).then(r => r.ok ? r.json() : Promise.reject(`Chapters API Error: ${r.status}`)),
+        fetch(`https://api.quran.com/api/v4/quran/verses/uthmani?chapter_number=${id}&per_page=300`).then(r => r.ok ? r.json() : Promise.reject(`Verses API Error: ${r.status}`)),
+        fetch(`https://api.quran.com/api/v4/quran/verses/uthmani_tajweed?chapter_number=${id}&per_page=300`).then(r => r.ok ? r.json() : Promise.reject(`Tajweed API Error: ${r.status}`))
+      ]);
+
+      // Then we try to fetch audio, but don't let it block or break the surah data state
+      let audioRes = null;
+      try {
+        const audioFetchWithSegments = await fetch(`https://api.quran.com/api/v4/chapter_recitations/${activeReciterId}/${id}?segments=true`);
+        if (audioFetchWithSegments.ok) {
+          audioRes = await audioFetchWithSegments.json();
+        } else {
+          // If 404 or other error, fallback to without segments
+          const audioFetchNoSegments = await fetch(`https://api.quran.com/api/v4/chapter_recitations/${activeReciterId}/${id}`);
+          if (audioFetchNoSegments.ok) {
+            audioRes = await audioFetchNoSegments.json();
+          } else {
+            console.warn(`Could not load audio for reciter ${activeReciterId} and chapter ${id}`);
+          }
+        }
+      } catch (audioErr) {
+        console.error("Audio fetch error:", audioErr);
+      }
+      
+      if (versesRes.verses && infoRes.chapter && tajweedRes.verses) {
+        const audioUrl = audioRes?.audio_file?.audio_url;
+        const timestamps = audioRes?.audio_file?.timestamps || [];
+        const segments: any[] = [];
+        
+        timestamps.forEach((t: any, idx: number) => {
+          if (t.segments) {
+            t.segments.forEach((s: any) => {
+              // Flatten to: [verseId, wordIdx, timeStart, timeEnd]
+              segments.push([idx + 1, s[0], s[1], s[2]]);
+            });
+          }
+        });
+        
+        if (activeAudioScopeRef.current === scope && audioPlayerRef.current) {
+          audioPlayerRef.current.src = audioUrl;
+          audioPlayerRef.current.load();
+        }
+
+        const fullTajweedText = tajweedRes.verses.map((v: any, i: number) => {
+          const cleanTajweed = v.text_uthmani_tajweed.replace(/<span class=["']?end["']?>.*?<\/span>/g, '').trim();
+          return `<span data-verse="${i + 1}">${cleanTajweed} ﴿${toArabicNumber(v.verse_number || i + 1)}﴾</span>`;
+        }).join("  ");
+
+        const fullPlainText = versesRes.verses.map((v: any, i: number) => {
+          return `<span data-verse="${i + 1}">${v.text_uthmani} ﴿${toArabicNumber(v.verse_number || i + 1)}﴾</span>`;
+        }).join("  ");
+
+        updateScopeState(scope, {
+          quranText: fullPlainText,
+          quranTajweedText: fullTajweedText,
+          surahInfo: { id: infoRes.chapter.id, name: infoRes.chapter.name_arabic },
+          isLoading: false,
+          audioTimestamps: timestamps,
+          audioSegments: segments,
+          audioData: audioRes,
+          ...(forcedReciterId ? { reciterId: forcedReciterId } : {})
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      updateScopeState(scope, { isLoading: false, error: true });
+    }
+  }, [scopes, toArabicNumber, updateScopeState]);
+
+  // LOAD ON MOUNT & STATIC DATA
+  useEffect(() => {
+    // 1. Static resources
+    fetch('https://api.quran.com/api/v4/resources/recitations').then(r => r.ok ? r.json() : Promise.reject('Invalid')).then(d => d.recitations && setReciters(d.recitations)).catch(() => {});
+    fetch('https://api.quran.com/api/v4/chapters?language=en').then(r => r.ok ? r.json() : Promise.reject('Invalid')).then(d => d.chapters && setSurahList(d.chapters)).catch(() => {});
+
+    // 2. Audio element creation
+    const audio = new Audio();
+    audio.onplay = () => setIsPlayingAudio(true);
+    audio.onpause = () => setIsPlayingAudio(false);
+    audio.onended = () => {
+      setIsPlayingAudio(false);
+      const scope = activeAudioScopeRef.current;
+      if (scope) {
+        // This is tricky because we need the latest scopes state. 
+        // We'll use a functional state update or another ref if needed.
+        // For now, nextSurah is safer if it's aware of the scope.
+      }
+    };
+    audioPlayerRef.current = audio;
+
+    // 3. Rehydrate and initial fetch
+    const hydrate = async () => {
+      const scopesToLoad = ['home' as QuranScope, 'test' as QuranScope];
+      for (const scope of scopesToLoad) {
+        let currentSurah = 1;
+        try {
+          const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}${scope}`);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            currentSurah = parsed.surahNumber || 1;
+            posRefs.current[scope] = parsed.pos || 0;
+            updateScopeState(scope, { ...parsed, isLoading: true, isPaused: true });
+          }
+        } catch (e) {}
+        await fetchSurah(currentSurah, scope);
+      }
+    };
+    hydrate();
+
+    return () => { audio.pause(); audio.src = ""; };
+  }, []); // Run ONCE on mount
+
+  // Periodically persist the current state (surah, position, preferences) to localStorage
+  useEffect(() => {
+    const timer = setInterval(() => {
+      (['home', 'test'] as QuranScope[]).forEach(scope => {
+         const st = scopes[scope];
+         if (st.quranText) { // only save if loaded
+           localStorage.setItem(`${STORAGE_KEY_PREFIX}${scope}`, JSON.stringify({
+              surahNumber: st.surahNumber,
+              level: st.level,
+              isTajweedEnabled: st.isTajweedEnabled,
+              fontFamily: st.fontFamily,
+              fontSizeLevel: st.fontSizeLevel,
+              isPaused: isPausedRefs.current[scope],
+              pos: posRefs.current[scope],
+              reciterId: st.reciterId,
+           }));
+         }
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [scopes, STORAGE_KEY_PREFIX]);
+
+  const requestRef = useRef<number>(0);
+  const lastTimeRef = useRef(0);
+  const lastAudioTimeRefs = useRef<Record<string, number>>({ home: -1, test: -1 });
+  const smoothAudioTimeRefs = useRef<Record<string, number>>({ home: 0, test: 0 });
+
+  // 🔴 CRITICAL ALGORITHM: DO NOT MODIFY! AUDIO SYNC LOGIC 🔴
+  // Smooth predictive interpolation ensures 60fps scrolling while syncing with audio.
+  // Modify ONLY if user explicitly requests changes to the audio sync engine.
+  const layerRef = useRef<HTMLElement | null>(null);
+  const lastVerseRef = useRef<string | null>(null);
+  const verseElRef = useRef<HTMLElement | null>(null);
+
+  const animate = useCallback((time: number) => {
+    const deltaTime = (time - lastTimeRef.current) / 1000;
+    
+    (Object.keys(scopesRef.current) as QuranScope[]).forEach(scope => {
+      // Direct visual update
+      const visualId = scope === 'test' ? 'quran-visual-native' : 'quran-visual-layer';
+      const visualEl = document.getElementById(visualId);
+      if (visualEl) {
+        visualEl.style.transform = `translateX(${posRefs.current[scope]}px)`;
+      }
+
+      if (isDraggingRefs.current[scope] || isPausedRefs.current[scope]) {
+        // No auto-scroll
+      } else {
+        const audioIsActive = audioPlayerRef.current && !audioPlayerRef.current.paused && activeAudioScopeRef.current === scope;
+        const currentLevel = scopesRef.current[scope].level;
+        const pixelsPerSecond = 30 + (currentLevel - 1) * 15;
+        const currentTextWidth = textWidthRefs.current[scope];
+
+        if (audioIsActive && currentTextWidth > 0) {
+          const rawMs = audioPlayerRef.current!.currentTime * 1000;
+          
+          if (lastAudioTimeRefs.current[scope] !== rawMs) {
+            lastAudioTimeRefs.current[scope] = rawMs;
+            if (Math.abs(smoothAudioTimeRefs.current[scope] - rawMs) > 500) {
+              smoothAudioTimeRefs.current[scope] = rawMs;
+            }
+          } else {
+            smoothAudioTimeRefs.current[scope] += deltaTime * 1000;
+          }
+          
+          const deltaSync = (rawMs - smoothAudioTimeRefs.current[scope]);
+          if (deltaSync < 0 && Math.abs(deltaSync) < 100) {
+             // Stay
+          } else if (Math.abs(deltaSync) > 5) {
+             smoothAudioTimeRefs.current[scope] += deltaSync * 0.08;
+          }
+          
+          const currentMs = smoothAudioTimeRefs.current[scope];
+          const currentStamps = audioTimestampsRefs.current[scope];
+          const currentSegs = audioSegmentsRefs.current[scope];
+
+          if (currentStamps.length > 0) {
+            let verseIdx = currentStamps.findIndex((t: any) => currentMs >= t.timestamp_from && currentMs <= t.timestamp_to);
+             if (verseIdx === -1) {
+                const nextIdx = currentStamps.findIndex((t: any) => t.timestamp_from > currentMs);
+                verseIdx = nextIdx === -1 ? currentStamps.length - 1 : Math.max(0, nextIdx - 1);
+            }
+
+            const queryId = scope === 'test' ? 'quran-measurement-native' : 'quran-measurement-layer';
+            if (!layerRef.current || (layerRef.current as any).queryId !== queryId) {
+               layerRef.current = document.getElementById(queryId);
+               if (layerRef.current) (layerRef.current as any).queryId = queryId;
+               verseElRef.current = null;
+            }
+
+            const verseIdStr = (verseIdx + 1).toString();
+            if (lastVerseRef.current !== verseIdStr || !verseElRef.current || !layerRef.current) {
+               lastVerseRef.current = verseIdStr;
+               verseElRef.current = layerRef.current?.querySelector(`[data-verse="${verseIdStr}"]`) as HTMLElement;
+            }
+
+            const verseEl = verseElRef.current;
+            const verseObj = currentStamps[verseIdx];
+
+            if (verseEl && verseObj && currentTextWidth > 0) {
+              let progress = 0;
+              const vSegs = currentSegs.filter((s: any) => s[0].toString() === verseIdStr);
+              
+              if (vSegs.length > 0) {
+                const cur = vSegs.find((s: any) => currentMs >= s[2] && currentMs <= s[3]);
+                if (cur) {
+                  progress = (cur[1] - 1 + ((currentMs - cur[2]) / (cur[3] - cur[2] || 1))) / vSegs.length;
+                } else {
+                  const last = vSegs[vSegs.length - 1];
+                  if (currentMs > last[3]) progress = 1;
+                }
+              } else {
+                progress = (currentMs - verseObj.timestamp_from) / (verseObj.timestamp_to - verseObj.timestamp_from || 1);
+              }
+
+              const dRight = currentTextWidth - (verseEl.offsetLeft + verseEl.offsetWidth);
+              const target = dRight + Math.min(1.02, Math.max(-0.02, progress)) * verseEl.offsetWidth;
+              
+              const diff = target - posRefs.current[scope];
+              if (Math.abs(diff) > 300) {
+                 posRefs.current[scope] = target;
+              } else {
+                 posRefs.current[scope] += diff * 0.15; 
+              }
+            }
+          }
+        } else {
+          posRefs.current[scope] += pixelsPerSecond * deltaTime;
+        }
+
+        if (currentTextWidth > 0 && posRefs.current[scope] >= currentTextWidth) {
+          const next = scopesRef.current[scope].surahNumber < 114 ? scopesRef.current[scope].surahNumber + 1 : 1;
+          fetchSurah(next, scope);
+          posRefs.current[scope] = 0;
+        }
+      }
+    });
+
+    lastTimeRef.current = time;
+    requestRef.current = requestAnimationFrame(animate);
+  }, [fetchSurah]);
+
+  useEffect(() => {
+    requestRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(requestRef.current);
+  }, [animate]);
+
+  const value: QuranContextType = {
+    getScopeState: (s) => scopes[s],
+    setSurahNumber: (id, s = 'home') => { posRefs.current[s] = 0; fetchSurah(id, s); },
+    setLevel: (l, s = 'home') => updateScopeState(s, { level: l }),
+    setIsTajweedEnabled: (v, s = 'home') => updateScopeState(s, { isTajweedEnabled: v }),
+    setFontFamily: (v, s = 'home') => updateScopeState(s, { fontFamily: v }),
+    setFontSizeLevel: (v, s = 'home') => updateScopeState(s, { fontSizeLevel: v }),
+    togglePause: (s = 'home') => updateScopeState(s, { isPaused: !scopes[s].isPaused }),
+    setPos: (v, s = 'home') => { posRefs.current[s] = v; },
+    getPos: (s = 'home') => posRefs.current[s],
+    setIsDragging: (d, s = 'home') => { isDraggingRefs.current[s] = d; },
+    setTextWidth: (w, s = 'home') => { textWidthRefs.current[s] = w; updateScopeState(s, { textWidth: w }); },
+    nextSurah: (s = 'home') => { const next = scopes[s].surahNumber < 114 ? scopes[s].surahNumber + 1 : 1; posRefs.current[s] = 0; fetchSurah(next, s); },
+    prevSurah: (s = 'home') => { const prev = scopes[s].surahNumber > 1 ? scopes[s].surahNumber - 1 : 114; posRefs.current[s] = 0; fetchSurah(prev, s); },
+    fetchSurah,
+    audioPlayerRef,
+    isPlayingAudio,
+    activeAudioScope,
+    toggleAudio: (scope = 'home') => {
+      if (!audioPlayerRef.current) return;
+      
+      const player = audioPlayerRef.current;
+      
+      // If we are already playing in this scope, pause it
+      if (activeAudioScopeRef.current === scope && !player.paused) {
+        player.pause();
+        return;
+      }
+      
+      const sData = scopes[scope];
+      if (!sData.audioTimestamps || sData.audioTimestamps.length === 0) {
+        console.warn('Audio data not ready for scope', scope);
+      }
+
+      // If we are switching scopes or starting fresh, ensure the src is correct
+      const targetUrl = sData.audioData?.audio_file?.audio_url;
+      if (targetUrl) {
+         const currentSrc = player.src || '';
+         const targetPath = targetUrl.startsWith('//') ? targetUrl.substring(2) : targetUrl;
+         if (!currentSrc.includes(targetPath)) {
+            player.pause(); // Ensure we are paused before changing src
+            player.src = targetUrl;
+            player.load();
+         }
+      }
+
+      activeAudioScopeRef.current = scope;
+      setActiveAudioScope(scope);
+      
+      const queryId = scope === 'test' ? 'quran-measurement-native' : 'quran-measurement-layer';
+      const l = document.getElementById(queryId);
+      const pos = posRefs.current[scope];
+      const tw = textWidthRefs.current[scope];
+      const stamps = audioTimestampsRefs.current[scope];
+      
+      if (l && tw > 0 && stamps.length > 0) {
+        const verses = l.querySelectorAll('[data-verse]');
+        for (let i = 0; i < verses.length; i++) {
+          const el = verses[i] as HTMLElement;
+          const dS = tw - (el.offsetLeft + el.offsetWidth);
+          const dE = dS + el.offsetWidth;
+          if (pos >= dS && pos <= dE) {
+             const vIdx = parseInt(el.getAttribute('data-verse') || "1", 10) - 1;
+             const vObj = stamps[vIdx];
+             if (vObj) {
+               const progress = (pos - dS) / (el.offsetWidth || 1);
+               const targetTime = (vObj.timestamp_from + progress * (vObj.timestamp_to - vObj.timestamp_from)) / 1000;
+               
+               const setTimeSafe = () => {
+                 try {
+                   player.currentTime = targetTime;
+                 } catch (e) {
+                   console.warn("Retrying currentTime set...");
+                 }
+               };
+
+               if (player.readyState >= 1) {
+                 setTimeSafe();
+               } else {
+                 player.onloadedmetadata = () => {
+                   setTimeSafe();
+                   player.onloadedmetadata = null;
+                 };
+               }
+             }
+             break;
+          }
+        }
+      }
+      
+      // Fix: Wrap play() in a promise check to prevent interruption errors
+      const playPromise = player.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          if (error.name === 'AbortError') {
+            console.log('Playback was interrupted, this is expected if toggle is fast.');
+          } else {
+            console.error('Playback error:', error);
+          }
+        });
+      }
+      
+      updateScopeState(scope, { isPaused: false });
+    },
+    reciters,
+    reciterId: scopes.home.reciterId, 
+    setReciterId: (id, s = 'home') => {
+       updateScopeState(s, { reciterId: id });
+       localStorage.setItem(`quran_reciter_id_${s}`, id.toString());
+       fetchSurah(scopes[s].surahNumber, s, id);
+    },
+    surahList,
+    toArabicNumber,
+    // Compatibilities mapping to Home
+    surahNumber: scopes.home.surahNumber,
+    level: scopes.home.level,
+    quranText: scopes.home.quranText,
+    quranTajweedText: scopes.home.quranTajweedText,
+    isTajweedEnabled: scopes.home.isTajweedEnabled,
+    fontFamily: scopes.home.fontFamily,
+    fontSizeLevel: scopes.home.fontSizeLevel,
+    isPaused: scopes.home.isPaused,
+    surahInfo: scopes.home.surahInfo,
+    isLoading: scopes.home.isLoading,
+    error: scopes.home.error,
+    textWidth: scopes.home.textWidth,
+    audioTimestamps: scopes.home.audioTimestamps
+  };
+
+  return <QuranContext.Provider value={value}>{children}</QuranContext.Provider>;
+};
+
+export const useQuran = (scope: QuranScope = 'home') => {
+  const context = useContext(QuranContext);
+  if (!context) throw new Error('useQuran must be used within a QuranProvider');
+  
+  // Use a ref so the bound functions can be completely stable and always access the latest context
+  const contextRef = useRef(context);
+  contextRef.current = context;
+  
+  const boundActions = useMemo(() => ({
+    setSurahNumber: (id: number) => contextRef.current.setSurahNumber(id, scope),
+    setLevel: (l: number) => contextRef.current.setLevel(l, scope),
+    setIsTajweedEnabled: (v: boolean) => contextRef.current.setIsTajweedEnabled(v, scope),
+    setFontFamily: (v: string) => contextRef.current.setFontFamily(v, scope),
+    setFontSizeLevel: (v: number) => contextRef.current.setFontSizeLevel(v, scope),
+    togglePause: () => contextRef.current.togglePause(scope),
+    setPos: (v: number) => contextRef.current.setPos(v, scope),
+    getPos: () => contextRef.current.getPos(scope),
+    setIsDragging: (d: boolean) => contextRef.current.setIsDragging(d, scope),
+    setTextWidth: (w: number) => contextRef.current.setTextWidth(w, scope),
+    nextSurah: () => contextRef.current.nextSurah(scope),
+    prevSurah: () => contextRef.current.prevSurah(scope),
+    fetchSurah: (id: number, forcedReciterId?: number) => contextRef.current.fetchSurah(id, scope, forcedReciterId),
+    toggleAudio: () => contextRef.current.toggleAudio(scope),
+    setReciterId: (id: number) => contextRef.current.setReciterId(id, scope)
+  }), [scope]);
+
+  // Create a proxy/wrapper for the selected scope to make it feel like the standard hook
+  const scopeState = context.getScopeState(scope);
+  
+  return {
+    ...context,
+    ...scopeState,
+    ...boundActions
+  };
+};
+
+// ============================================================================
+// FILE: src/components/QuranVerseLive.tsx
+// ============================================================================
+
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useTranslation } from "react-i18next";
+import { motion, AnimatePresence } from 'motion/react';
+import { cn } from '@/lib/utils';
+import { Button } from './ui/button';
+import { Plus, Minus, Loader2, ChevronLeft, ChevronRight, AlertCircle, Type, Palette, Pause, Play, Volume2, VolumeX } from 'lucide-react';
+import { useQuran } from '@/context/QuranContext';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+
+interface QuranVerseLiveProps {
+  onSettingsToggle?: (isOpen: boolean) => void;
+  showSettingsManaged?: boolean;
+  isSettingsOpen?: boolean;
+}
+
+export const QuranVerseLive = React.memo<QuranVerseLiveProps>(({ 
+  onSettingsToggle,
+  showSettingsManaged = false,
+  isSettingsOpen = false
+}) => {
+  const { 
+    surahNumber, setSurahNumber, 
+    level, setLevel, 
+    quranText, quranTajweedText, 
+    isTajweedEnabled, setIsTajweedEnabled,
+    isPaused, togglePause,
+    surahInfo, 
+    isLoading, error,
+    nextSurah, prevSurah,
+    fetchSurah,
+    isPlayingAudio, toggleAudio,
+    reciters, reciterId, setReciterId
+  } = useQuran();
+  
+  const [internalShowControls, setInternalShowControls] = useState(false);
+  const showControls = showSettingsManaged ? false : internalShowControls;
+  
+  const handleToggleSettings = useCallback(() => {
+    if (onSettingsToggle) {
+      onSettingsToggle(!isSettingsOpen);
+    } else {
+      setInternalShowControls(prev => !prev);
+    }
+  }, [onSettingsToggle, isSettingsOpen]);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(300); // Default fallback
+
+  useEffect(() => {
+    if (containerRef.current) {
+      const w = containerRef.current.offsetWidth;
+      if (w > 0) setContainerWidth(w);
+    }
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0) {
+          setContainerWidth(entry.contentRect.width);
+        }
+      }
+    });
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div className="w-full mb-2 mt-1 px-4 flex flex-col items-end" ref={containerRef}>
+      <div 
+        className="w-full h-[64px] flex items-center justify-center relative overflow-hidden group cursor-pointer select-none"
+      >
+        <AnimatePresence mode="wait">
+          {error ? (
+            <motion.div 
+              key="error" 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} 
+              className="flex items-center gap-2 text-red-500 font-medium text-xs h-full"
+            >
+              <span>Қате орын алды</span>
+              <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); fetchSurah(surahNumber); }} className="h-6 px-2">Қайталау</Button>
+            </motion.div>
+          ) : isLoading ? (
+            <motion.div key="loader" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-center h-full">
+              <Loader2 className="w-5 h-5 animate-spin text-primary/30" />
+            </motion.div>
+          ) : quranText ? (
+          <motion.div
+            key={`scroller-${surahNumber}`} // ONLY change key when surah changes!
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 flex items-center"
+          >
+            <PersistentScroller
+              text={isTajweedEnabled ? quranTajweedText : quranText}
+              isHtml={true} // Now both are HTML spans
+              onComplete={nextSurah}
+              onTap={(clientX) => {
+                  // Eliminate reflow cost by using fast innerWidth
+                  if (clientX > window.innerWidth / 2) {
+                    togglePause();
+                    setInternalShowControls(false); // Hide internal settings if open
+                  } else {
+                    handleToggleSettings();
+                  }
+                }}
+              />
+            </motion.div>
+          ) : (
+            <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-zinc-400 text-xs italic">
+               Аяттар жүктелуде...
+             </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {isPaused && quranText && !isLoading && !error && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }} 
+              animate={{ opacity: 1, scale: 1 }} 
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="absolute left-0 bottom-0 pointer-events-none z-30 m-2 flex items-center gap-1.5 bg-black/60 dark:bg-white/10 text-white rounded-md px-2 py-1 shadow-md backdrop-blur-sm"
+            >
+              <Pause className="w-3 h-3 fill-white" />
+              <span className="text-[10px] font-bold tracking-wider uppercase">Тоқтатылды</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {!showSettingsManaged && (
+        <AnimatePresence>
+          {internalShowControls && (
+            <div className="w-full mt-1">
+              <QuranSettings />
+            </div>
+          )}
+        </AnimatePresence>
+      )}
+    </div>
+  );
+});
+
+export const QuranSettings = React.memo<{ onClose?: () => void, scope?: 'home' | 'test' }>(({ onClose, scope = 'home' }) => {
+  const { t } = useTranslation();
+  const { 
+    surahNumber, setSurahNumber, 
+    level, setLevel, 
+    isTajweedEnabled, setIsTajweedEnabled,
+    fontFamily, setFontFamily,
+    fontSizeLevel, setFontSizeLevel,
+    surahInfo, 
+    nextSurah, prevSurah,
+    isPlayingAudio, toggleAudio,
+    reciters, reciterId, setReciterId,
+    surahList
+  } = useQuran(scope);
+
+  const fonts = [
+    { id: 'font-quran-uthmanic', name: 'Uthmanic (Official)' },
+    { id: 'font-quran-indopak', name: 'IndoPak (Official)' },
+    { id: 'font-quran-kfgqpc', name: 'KFGQPC (Authentic)' },
+    { id: 'font-quran-amiri', name: 'Amiri (Classic)' },
+    { id: 'font-quran-scheherazade', name: 'Scheherazade (Modern)' },
+    { id: 'font-quran-lateef', name: 'Lateef (Elegant)' },
+    { id: 'font-quran-noto', name: 'Noto Naskh (Standard)' }
+  ];
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.95, y: -5 }} 
+      animate={{ opacity: 1, scale: 1, y: 0 }} 
+      exit={{ opacity: 0, scale: 0.95, y: -5 }} 
+      className="flex items-center gap-2 z-50 w-full overflow-x-auto no-scrollbar touch-pan-x snap-x snap-mandatory relative h-[44px]"
+    >
+      <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-50 dark:bg-zinc-800/20 border border-zinc-100 dark:border-zinc-800/50 shadow-sm backdrop-blur-md min-w-max snap-start h-full">
+        <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            title="Дауыстап оқу"
+            disabled={isTajweedEnabled}
+            onClick={(e) => { e.stopPropagation(); toggleAudio(); }} 
+            className={cn(
+              "rounded-md h-7 min-w-[50px] transition-colors shrink-0 mr-1 flex items-center justify-center gap-1.5 px-2",
+              isPlayingAudio 
+                ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground" 
+                : "text-muted-foreground",
+              isTajweedEnabled && "opacity-20 cursor-not-allowed grayscale"
+            )}
+          >
+            {isPlayingAudio ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          </Button>
+          <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 border-l border-zinc-200 dark:border-zinc-800 pl-1.5 ml-0.5">
+            <span className="text-[9px] font-black text-muted-foreground uppercase shrink-0 tracking-tighter">{t('quran_reciter')}:</span>
+            <Select value={reciterId.toString()} onValueChange={(val) => setReciterId(parseInt(val, 10))}>
+              <SelectTrigger className="h-8 border-0 bg-transparent text-[11px] font-bold px-2 shadow-none focus:ring-0 max-w-[150px] truncate hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors flex items-center gap-1">
+                <SelectValue placeholder="Таңдау" />
+              </SelectTrigger>
+              <SelectContent align="start" className="min-w-[220px] max-h-[300px] p-1 rounded-2xl border-zinc-200 dark:border-zinc-800 shadow-2xl backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95">
+                {reciters && reciters.length > 0 ? (
+                  reciters.map(r => (
+                    <SelectItem key={r.id} value={r.id.toString()} className="py-2 px-3 text-sm cursor-pointer rounded-xl focus:bg-primary transition-all focus:text-primary-foreground mb-0.5 last:mb-0">
+                      <div className="flex flex-col gap-0">
+                        <span className="font-bold text-xs tracking-tight">{r.translated_name?.name || r.reciter_name}</span>
+                        <div className="flex items-center gap-1">
+                          {r.style && (
+                            <span className="text-[8px] px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 opacity-70 uppercase font-black tracking-widest">
+                              {r.style}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="7" className="py-2 px-3 text-xs font-bold">Mishary Rashid Alafasy</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Font Family Control */}
+        <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
+          <div className="flex items-center gap-1 ml-1.5 shrink-0">
+            <Type className="w-3 h-3 text-muted-foreground" />
+            <span className="text-[9px] font-black text-muted-foreground uppercase tracking-tighter">{t('quran_font')}</span>
+          </div>
+          <Select value={fontFamily} onValueChange={(val) => setFontFamily(val)}>
+            <SelectTrigger className="h-8 border-0 bg-transparent text-[10px] font-bold px-2 shadow-none focus:ring-0 w-[120px] truncate hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors flex items-center gap-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start" className="min-w-[160px] p-1 rounded-2xl border-zinc-200 dark:border-zinc-800 shadow-2xl backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95">
+              {fonts.map(f => (
+                <SelectItem key={f.id} value={f.id} className="py-2 px-3 text-xs cursor-pointer rounded-xl focus:bg-primary transition-all focus:text-primary-foreground mb-0.5 last:mb-0">
+                  <span className={cn(f.id, "text-sm")}>{f.name.split(' ')[0]}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800 shrink-0">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            title={t('quran_tajweed')}
+            disabled={isPlayingAudio}
+            onClick={(e) => { e.stopPropagation(); setIsTajweedEnabled(!isTajweedEnabled); }} 
+            className={cn(
+              "rounded-md h-7 min-w-[50px] px-2 transition-colors flex items-center justify-center gap-1.5",
+              isTajweedEnabled ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground" : "text-muted-foreground",
+              isPlayingAudio && "opacity-20 cursor-not-allowed grayscale"
+            )}
+          >
+            <Palette className="w-3.5 h-3.5" />
+            <span className="text-[9px] font-black uppercase tracking-tighter">{t('quran_tajweed')}</span>
+          </Button>
+        </div>
+
+        {/* Surah Selection */}
+        <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
+           <Select value={surahNumber.toString()} onValueChange={(val) => setSurahNumber(parseInt(val, 10))}>
+            <SelectTrigger className="h-8 border-0 bg-transparent text-[10px] font-bold px-2 shadow-none focus:ring-0 min-w-[100px] hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors flex items-center justify-between gap-1">
+               <div className="flex items-center gap-1">
+                  <span className="text-primary font-black opacity-40">{surahNumber}.</span>
+                  <span className="truncate max-w-[80px]">{surahInfo?.name || t('loading')}</span>
+               </div>
+            </SelectTrigger>
+            <SelectContent align="start" className="min-w-[180px] max-h-[300px] p-1 rounded-2xl border-zinc-200 dark:border-zinc-800 shadow-2xl backdrop-blur-xl bg-white/95 dark:bg-zinc-950/95">
+               {surahList && surahList.length > 0 ? (
+                 surahList.map(s => (
+                   <SelectItem key={s.id} value={s.id.toString()} className="py-2 px-3 text-xs cursor-pointer rounded-xl focus:bg-primary transition-all focus:text-primary-foreground mb-0.5 last:mb-0">
+                      <div className="flex items-center justify-between w-full gap-2">
+                        <span className="font-bold opacity-30 text-[10px]">{s.id}.</span>
+                        <span className="font-bold flex-1">{s.name_simple}</span>
+                        <span className="font-arabic text-sm opacity-60">{s.name_arabic}</span>
+                      </div>
+                   </SelectItem>
+                 ))
+               ) : (
+                 <SelectItem value={surahNumber.toString()} className="py-2 px-3 text-xs font-bold">{surahNumber}. {surahInfo?.name}</SelectItem>
+               )}
+            </SelectContent>
+          </Select>
+        </div>
+        
+        {/* Speed Control */}
+        <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
+          <Button 
+            variant="ghost" 
+            size="icon-xs" 
+            disabled={isPlayingAudio}
+            onClick={(e) => { e.stopPropagation(); setLevel(Math.max(level - 1, 1)); }} 
+            className="rounded-md h-7 w-7 disabled:opacity-30 disabled:cursor-not-allowed"
+          ><Minus className="w-3.5 h-3.5" /></Button>
+          <div className="flex flex-col items-center justify-center min-w-[32px]">
+            <span className="text-[7px] font-black uppercase text-muted-foreground leading-none mb-0.5">{t('quran_speed')}</span>
+            <div className={cn("text-center font-mono font-bold text-[10px] leading-none", isPlayingAudio && "opacity-50")}>{level}</div>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon-xs" 
+            disabled={isPlayingAudio}
+            onClick={(e) => { e.stopPropagation(); setLevel(Math.min(level + 1, 10)); }} 
+            className="rounded-md h-7 w-7 disabled:opacity-30 disabled:cursor-not-allowed"
+          ><Plus className="w-3.5 h-3.5" /></Button>
+        </div>
+
+        {/* Font Size Control */}
+        <div className="flex items-center bg-white/50 dark:bg-zinc-900/50 rounded-lg p-0.5 border border-zinc-200/50 dark:border-zinc-800">
+          <Button 
+            variant="ghost" 
+            size="icon-xs" 
+            onClick={(e) => { e.stopPropagation(); setFontSizeLevel(Math.max(fontSizeLevel - 1, 1)); }} 
+            className="rounded-md h-7 w-7"
+          ><Minus className="w-3.5 h-3.5" /></Button>
+          <div className="flex items-center justify-center min-w-[50px] px-1 gap-1 border-x border-zinc-200 dark:border-zinc-800 mx-1">
+            <span className="text-[10px] font-bold">{fontSizeLevel}</span>
+            <span className="text-[7px] font-black uppercase text-muted-foreground tracking-tighter">{t('quran_font')}</span>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon-xs" 
+            onClick={(e) => { e.stopPropagation(); setFontSizeLevel(Math.min(fontSizeLevel + 1, 10)); }} 
+            className="rounded-md h-7 w-7"
+          ><Plus className="w-3.5 h-3.5" /></Button>
+        </div>
+      </div>
+    </motion.div>
+  );
+});
+
+const HeavyTajweedText = React.memo<{ text: string, isHtml?: boolean }>(({ text, isHtml }) => {
+  if (!text) return null;
+  return isHtml ? <span dangerouslySetInnerHTML={{ __html: text }} /> : <span dangerouslySetInnerHTML={{ __html: text }} />; // actually it is safer to just output text normally if not html
+});
+
+// Since we know text is huge, we ONLY update it when strictly necessary
+const PureTajweed = React.memo<{ text: string, isHtml?: boolean }>(({ text, isHtml }) => {
+  // Use a simple span to avoid any extra block-level layout shifts
+  return <span dangerouslySetInnerHTML={{ __html: text }} className="inline-block" />;
+});
+
+const PersistentScroller: React.FC<{
+  text: string;
+  isHtml?: boolean;
+  onComplete?: () => void;
+  onTap?: (clientX: number) => void;
+}> = ({ text, isHtml, onComplete, onTap }) => {
+  const { 
+    getPos, setPos, setIsDragging, setTextWidth, textWidth: globalTextWidth, togglePause,
+    isTajweedEnabled, fontSizeLevel, fontFamily
+  } = useQuran();
+
+  // 🔴 CRITICAL ALGORITHM: DO NOT MODIFY! FONT SCALING LOGIC 🔴
+  // Smoothly maps levels 1-10 to sizes. Modifying this breaks the UI flow.
+  // DO NOT change unless user explicitly requests font size logic changes.
+  const currentFontSize = useMemo(() => {
+    return `${16 + (fontSizeLevel * 2)}px`;
+  }, [fontSizeLevel]);
+
+  const textRef = useRef<HTMLDivElement>(null);
+  const viewRef2 = useRef<HTMLDivElement>(null);
+  
+  const dragState = useRef({ isDragging: false, startX: 0, startPos: 0, hasMoved: false });
+
+  const handleStart = useCallback((clientX: number) => {
+    dragState.current = { isDragging: true, startX: clientX, startPos: getPos(), hasMoved: false };
+    // DO NOT call setIsDragging(true) here! It triggers massive React renders for Tajweed.
+    // We defer to handleMove when actual drag > 5px occurs.
+  }, [getPos]);
+
+  const handleMove = useCallback((clientX: number) => {
+    if (!dragState.current.isDragging) return;
+    const deltaX = clientX - dragState.current.startX;
+    
+    // Only flag as a drag if physically moved enough
+    if (Math.abs(deltaX) > 5) {
+      if (!dragState.current.hasMoved) {
+        dragState.current.hasMoved = true;
+        setIsDragging(true); // Trigger React state ONLY when dragging confirmed
+      }
+    }
+
+    if (dragState.current.hasMoved) {
+      setPos(dragState.current.startPos + deltaX);
+    }
+  }, [setPos, setIsDragging]);
+
+  const handleEnd = useCallback(() => {
+    if (dragState.current.isDragging) {
+      dragState.current.isDragging = false;
+      if (dragState.current.hasMoved) {
+        setIsDragging(false);
+      }
+    }
+  }, [setIsDragging]);
+
+  // Measure text raw width without padding using ResizeObserver for immediate reaction
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) return;
+    
+    const ro = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+         const w = (entry.target as HTMLElement).offsetWidth;
+         if (w > 0) setTextWidth(w);
+      }
+    });
+    ro.observe(el);
+    
+    // Initial sync
+    if (el.offsetWidth > 0) setTextWidth(el.offsetWidth);
+    
+    return () => ro.disconnect();
+  }, [text, setTextWidth]);
+
+  // Apply position to physical DOM refs locally (bypassing React render at 60fps)
+  useEffect(() => {
+    let rAF: number;
+    const loop = () => {
+      const pos = getPos();
+      if (viewRef2.current) viewRef2.current.style.transform = `translateX(${pos}px)`;
+      rAF = requestAnimationFrame(loop);
+    };
+    rAF = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rAF);
+  }, [getPos]);
+
+  return (
+    <div 
+      className="relative w-full h-full flex items-center pt-4 pb-4 overflow-hidden touch-pan-y cursor-grab active:cursor-grabbing" 
+      dir="rtl"
+      onPointerDown={e => handleStart(e.clientX)}
+      onPointerMove={e => handleMove(e.clientX)}
+      onPointerUp={handleEnd}
+      onPointerCancel={handleEnd}
+      onPointerLeave={handleEnd}
+      onClickCapture={e => {
+        if (dragState.current.hasMoved) {
+          e.stopPropagation();
+          e.preventDefault();
+        } else {
+          if (onTap) onTap(e.clientX);
+        }
+      }}
+    >
+      {/*  
+        Ref for strict measurement perfectly matching the real text. 
+        NO padding here so we get ONLY the pure text width.
+      */}
+      <div 
+        id="quran-measurement-layer"
+        className={cn(
+          "absolute opacity-0 pointer-events-none whitespace-nowrap leading-none pt-4 pb-4",
+          fontFamily,
+          isTajweedEnabled && "tajweed-active"
+        )}
+        style={{ fontSize: currentFontSize, transition: 'font-size 0.3s ease-out' }}
+        ref={textRef}
+      >
+        <PureTajweed text={text} isHtml={true} />
+      </div>
+
+      {/* 
+        MAIN VISIBLE LAYER
+      */}
+      <div 
+        className="absolute inset-0 z-20 pointer-events-none"
+        style={{
+          maskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+          WebkitMaskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)'
+        }}
+      >
+        <div 
+           className={cn(
+             "absolute right-0 flex flex-nowrap items-center h-full will-change-transform pointer-events-none",
+             isTajweedEnabled && "tajweed-active"
+           )}
+           ref={viewRef2}
+        >
+          <div className={cn(
+            "whitespace-nowrap leading-none pt-4 pb-4 text-zinc-900 dark:text-zinc-100 px-[50vw]",
+            fontFamily
+          )} style={{ fontSize: currentFontSize, transition: 'font-size 0.3s ease-out' }}>
+            <PureTajweed text={text} isHtml={true} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// FILE: src/components/test-native/NativeQuranBlock.tsx
+// ============================================================================
+
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, PanResponder } from 'react-native';
+import { Pause, Volume2, VolumeX } from 'lucide-react';
+import { useQuran } from '../../context/QuranContext';
+
+const MemoizedQuranText = React.memo(({ 
+  htmlContent, webFontClass, calculatedFontSize, isTajweedEnabled, isDarkMode, textRef, viewRef
+}: any) => {
+  const commonStyles: any = {
+    fontSize: `${calculatedFontSize}px`,
+    lineHeight: '1',
+    letterSpacing: '0px',
+    whiteSpace: 'nowrap',
+    fontFamily: `var(--${webFontClass}), serif`,
+  };
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }} dir="rtl">
+      {/* Invisible Measurement Layer */}
+      <div
+        id="quran-measurement-native"
+        ref={textRef}
+        className={`quran-text ${webFontClass} ${isTajweedEnabled ? 'tajweed-active' : ''}`}
+        style={{
+          ...commonStyles,
+          position: 'absolute', 
+          opacity: 0, 
+          pointerEvents: 'none',
+          top: -9999,
+          right: 0,
+          width: 'max-content',
+        }}
+        dangerouslySetInnerHTML={{ __html: htmlContent || '' }}
+      />
+
+      {/* Visible Stream Layer */}
+      <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, display: 'flex', alignItems: 'center', overflow: 'visible' }}>
+        <div
+          id="quran-visual-native"
+          ref={viewRef}
+          className={`quran-text ${webFontClass} ${isTajweedEnabled ? 'tajweed-active' : ''}`}
+          style={{
+            ...commonStyles,
+            display: 'flex', 
+            alignItems: 'center',
+            color: isDarkMode ? '#ffffff' : '#000000',
+            paddingLeft: '50vw', 
+            paddingRight: '50vw',
+            willChange: 'transform',
+            flexShrink: 0,
+            minWidth: 'max-content',
+            zIndex: 1,
+          }}
+          dangerouslySetInnerHTML={{ __html: htmlContent || '' }}
+        />
+      </div>
+    </div>
+  );
+});
+
+export const NativeQuranBlock = ({ 
+  isDarkMode, 
+  onToggleSettings 
+}: { 
+  isDarkMode: boolean; 
+  onToggleSettings: () => void;
+}) => {
+  const {
+    quranText, quranTajweedText, isTajweedEnabled, isLoading, error, fetchSurah, surahNumber, 
+    isPaused, togglePause, fontFamily, fontSizeLevel, 
+    getPos, setPos, setIsDragging, setTextWidth,
+    isPlayingAudio, toggleAudio, surahInfo, reciterId, reciters, surahList
+  } = useQuran('test');
+
+  const currentReciter = reciters.find(r => r.id === reciterId);
+
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [activeVerse, setActiveVerse] = useState(1);
+  const containerRef = useRef<any>(null); 
+  const textRef = useRef<any>(null); 
+  const viewRef = useRef<any>(null); 
+
+  // Removed internal updateLoop. 
+  // The QuranContext.tsx now drives the #quran-visual-native and #quran-visual-layer DOM elements directly 
+  // 60 times per second for zero-lag, jitter-free movement.
+  
+  // Watermark verse tracking (throttled)
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    
+    let isMounted = true;
+    const checkVerse = () => {
+      if (!isMounted) return;
+      const currentPos = getPos();
+      const tw = textRef.current?.scrollWidth || 0;
+      const layer = document.getElementById('quran-measurement-native');
+      if (layer && tw > 0) {
+        const verses = layer.querySelectorAll('[data-verse]');
+        for (let i = 0; i < verses.length; i++) {
+          const el = verses[i] as HTMLElement;
+          const vStart = tw - (el.offsetLeft + el.offsetWidth);
+          const vEnd = vStart + el.offsetWidth;
+          if (currentPos >= vStart && currentPos <= vEnd) {
+            const vNum = parseInt(el.getAttribute('data-verse') || "1", 10);
+            setActiveVerse(vNum);
+            break;
+          }
+        }
+      }
+      setTimeout(checkVerse, 200); // 5fps for watermark is plenty
+    };
+    checkVerse();
+    return () => { isMounted = false; };
+  }, [getPos]);
+
+  // Update text width for bounds in QuranContext
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !textRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        setTextWidth((entry.target as HTMLElement).offsetWidth);
+      }
+    });
+    observer.observe(textRef.current);
+    return () => observer.disconnect();
+  }, [setTextWidth, quranText, containerWidth]);
+
+  // Handle touch interactions
+  const gestureStartPos = useRef(0);
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => Math.abs(gestureState.dx) > 5,
+      onPanResponderGrant: () => {
+        setIsDragging(true);
+        gestureStartPos.current = getPos();
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        // dx is positive when swiping right. 
+        // Swiping right should move the text rightward (increase pos).
+        let newPos = gestureStartPos.current + gestureState.dx; 
+        if (newPos < 0) newPos = 0;
+        setPos(newPos);
+      },
+      onPanResponderRelease: () => {
+        setIsDragging(false);
+      },
+      onPanResponderTerminate: () => {
+        setIsDragging(false);
+      }
+    })
+  ).current;
+
+  // Ensure surah is loaded
+  useEffect(() => {
+    if (!quranText && !isLoading && !error) {
+      fetchSurah(surahNumber);
+    }
+  }, [quranText, isLoading, error, fetchSurah, surahNumber]);
+
+  // 🔴 CRITICAL ALGORITHM: DO NOT MODIFY! FONT SCALING LOGIC 🔴
+  // Match Home screen font size levels smoothly (1-10)
+  // Maps level 10 to old max of 36px. DO NOT change unless requested.
+  const getFontSize = (level: number) => {
+    return 16 + (level * 2); 
+  };
+
+  const calculatedFontSize = getFontSize(fontSizeLevel);
+  const styles = getQuranStyles(isDarkMode, fontFamily, calculatedFontSize);
+
+  if (error) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.errorText}>Қате орын алды</Text>
+        <TouchableOpacity style={styles.retryBtn} onPress={() => fetchSurah(surahNumber)}>
+          <Text style={styles.retryText}>Қайталау</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (isLoading || (!quranText && !quranTajweedText)) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="small" color={isDarkMode ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)"} />
+      </View>
+    );
+  }
+
+  const htmlContent = isTajweedEnabled ? quranTajweedText : quranText;
+  
+  // Since we use the same CSS classes as web, mapping is easier.
+  // Note: the original 'font-quran-uthmanic' and 'font-quran-indopak' etc. 
+  // must be present in index.css as Tailwind classes.
+  const webFontClass = fontFamily || 'font-quran-hafs';
+
+  return (
+    <View 
+      style={styles.container} 
+      onLayout={e => {
+        const w = e.nativeEvent.layout.width;
+        if (w > 0) setContainerWidth(w);
+      }}
+      {...panResponder.panHandlers}
+    >
+      {Platform.OS === 'web' ? (
+        <View style={styles.webContainer}>
+          <MemoizedQuranText
+            key={`${webFontClass}-${isTajweedEnabled}`}
+            htmlContent={htmlContent}
+            webFontClass={webFontClass}
+            calculatedFontSize={calculatedFontSize}
+            isTajweedEnabled={isTajweedEnabled}
+            isDarkMode={isDarkMode}
+            textRef={textRef}
+            viewRef={viewRef}
+          />
+        </View>
+      ) : (
+        <View style={styles.centerContainer}>
+          <Text style={styles.errorText}>Бұл блок үшін веб-платформа қажет</Text>
+        </View>
+      )}
+
+      <View style={styles.leftFog} pointerEvents="none" />
+      <View style={styles.rightFog} pointerEvents="none" />
+      
+      {/* WATERMARK OVERLAY (TOP-LEFT) */}
+      <View style={styles.watermarkOverlay} pointerEvents="none">
+        <Text style={styles.surahInfoText}>
+          {surahNumber}. {surahList?.find(s => s.id === surahNumber)?.name_simple || surahInfo?.name || ''} 
+          <Text style={styles.activeVerseNum}>  {activeVerse}</Text>
+        </Text>
+      </View>
+
+      {/* RECITER WATERMARK (TOP-RIGHT) */}
+      <View style={styles.reciterWatermark} pointerEvents="none">
+        <Text style={styles.reciterNameText}>{currentReciter?.reciter_name || ''}</Text>
+      </View>
+
+      <View style={styles.clickAreas}>
+        <TouchableOpacity style={{ flex: 1 }} onPress={() => onToggleSettings()} activeOpacity={1} />
+        <TouchableOpacity style={{ flex: 1 }} onPress={() => togglePause()} activeOpacity={1} />
+      </View>
+
+      <View style={[styles.centeredPause, { opacity: isPaused ? 1 : 0 }]} pointerEvents="none">
+        <View style={styles.pauseIconBg}>
+          <Pause size={16} color="#fff" fill="#fff" />
+        </View>
+      </View>
+    </View>
+  );
+};
+
+const getQuranStyles = (isDarkMode: boolean, customFontFamily: string, fontSize: number) => {
+  return StyleSheet.create({
+    container: {
+      width: '100%',
+      alignSelf: 'stretch',
+      height: 110, 
+      marginBottom: 0,
+      marginTop: 0,
+      justifyContent: 'center',
+      alignItems: 'center',
+      overflow: 'hidden',
+      backgroundColor: 'transparent',
+      position: 'relative',
+    },
+    webContainer: {
+      position: 'absolute',
+      top: 0, bottom: 0, left: 0, right: 0,
+      overflow: 'hidden',
+      zIndex: 1,
+    },
+    centerContainer: {
+      width: '100%',
+      height: 100,
+      justifyContent: 'center',
+      alignItems: 'center',
+      flexDirection: 'row',
+    },
+    leftFog: {
+      position: 'absolute', left: 0, top: 0, bottom: 0, width: 60,
+      // @ts-ignore
+      backgroundImage: isDarkMode ? 'linear-gradient(to right, #000000 0%, transparent 100%)' : 'linear-gradient(to right, #f8fafc 0%, transparent 100%)',
+      zIndex: 5
+    },
+    rightFog: {
+      position: 'absolute', right: 0, top: 0, bottom: 0, width: 60,
+      // @ts-ignore
+      backgroundImage: isDarkMode ? 'linear-gradient(to left, #000000 0%, transparent 100%)' : 'linear-gradient(to left, #f8fafc 0%, transparent 100%)',
+      zIndex: 5
+    },
+    clickAreas: {
+      position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, flexDirection: 'row', zIndex: 10
+    },
+    centeredPause: {
+      position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
+      justifyContent: 'center', alignItems: 'center', zIndex: 15
+    },
+    watermarkOverlay: {
+      position: 'absolute', top: 0, left: 6, zIndex: 6,
+    },
+    surahInfoText: {
+      fontSize: 12, fontWeight: '700', color: isDarkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)',
+      fontFamily: 'font-quran-amiri',
+    },
+    activeVerseNum: {
+      fontSize: 14, fontWeight: '900', color: isDarkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.35)',
+    },
+    reciterWatermark: {
+      position: 'absolute', top: 2, right: 10, zIndex: 6,
+    },
+    reciterNameText: {
+      fontSize: 10, fontWeight: '600', color: isDarkMode ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)',
+    },
+    leftControls: {
+      position: 'absolute', bottom: -5, left: 10, flexDirection: 'row', zIndex: 20,
+    },
+    miniControl: {
+      width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.4)',
+      justifyContent: 'center', alignItems: 'center',
+    },
+    pauseIconBg: {
+      width: 40, height: 40, borderRadius: 20,
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      justifyContent: 'center', alignItems: 'center',
+    },
+    errorText: {
+      color: '#ef4444',
+      fontSize: 12,
+      fontWeight: '500',
+    },
+    retryBtn: {
+      marginLeft: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    retryText: {
+      color: '#ef4444',
+      fontSize: 12,
+      fontWeight: '700',
+    }
+  });
+};

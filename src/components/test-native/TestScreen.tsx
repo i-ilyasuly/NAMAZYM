@@ -8,16 +8,26 @@ import { NativeQuranBlock } from './NativeQuranBlock';
 import { HorizontalCalendar } from './HorizontalCalendar';
 import { PrayerBlock } from './PrayerBlock';
 import { QuranSettingsModals } from './QuranSettingsModals';
+import { NativeBottomNav } from './NativeBottomNav';
+import { NativeStatisticsScreen } from './NativeStatisticsScreen';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-
-export function TestScreen() {
+export function TestScreen({ onExit }: { onExit?: () => void }) {
   const { isDarkMode } = useStore();
-  const { fontSizeLevel, setFontSizeLevel, level, setLevel } = useQuran('test');
+  const { fontSizeLevel, setFontSizeLevel, level, setLevel, quranText, fetchSurah, surahNumber, isLoading } = useQuran('test');
   
+  const [activeScreen, setActiveScreen] = useState<'namazym' | 'bagdar'>('namazym');
+  
+  useEffect(() => {
+    // Ensure Quran text is loaded for the test scope if it's missing
+    if (!quranText && !isLoading) {
+      fetchSurah(surahNumber);
+    }
+  }, [quranText, isLoading, fetchSurah, surahNumber]);
+
   const today = useMemo(() => new Date(), []);
   const [selectedDate, setSelectedDate] = useState(today);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -59,35 +69,48 @@ export function TestScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.mainScroll} contentContainerStyle={styles.container}>
-        <View style={{ width: '100%', marginBottom: 0 }}>
-          <NativeQuranBlock 
-            isDarkMode={isDarkMode} 
-            onToggleSettings={() => setShowQuranSettings(!showQuranSettings)} 
-          />
-        </View>
+      <View style={{ flex: 1 }}>
+        {activeScreen === 'namazym' ? (
+          <ScrollView style={styles.mainScroll} contentContainerStyle={styles.container}>
+            <View style={{ width: '100%', marginBottom: 0 }}>
+              <NativeQuranBlock 
+                isDarkMode={isDarkMode} 
+                onToggleSettings={() => setShowQuranSettings(!showQuranSettings)} 
+              />
+            </View>
 
-        <HorizontalCalendar 
-          isDarkMode={isDarkMode}
-          showQuranSettings={showQuranSettings}
-          days={days}
-          selectedDate={selectedDate}
-          onSelectDate={(date) => {
-            setSelectedDate(date);
-            setExpandedId(null);
-          }}
-          records={records}
-          onOpenModal={(type) => setActiveModal(type)}
-        />
+            <HorizontalCalendar 
+              isDarkMode={isDarkMode}
+              showQuranSettings={showQuranSettings}
+              days={days}
+              selectedDate={selectedDate}
+              onSelectDate={(date) => {
+                setSelectedDate(date);
+                setExpandedId(null);
+              }}
+              records={records}
+              onOpenModal={(type) => setActiveModal(type)}
+            />
 
-        <PrayerBlock 
-          isDarkMode={isDarkMode}
-          expandedId={expandedId}
-          currentDayRecord={currentDayRecord}
-          onToggleExpand={handleToggleExpand}
-          onSetStatus={handleSetStatus}
-        />
-      </ScrollView>
+            <PrayerBlock 
+              isDarkMode={isDarkMode}
+              expandedId={expandedId}
+              currentDayRecord={currentDayRecord}
+              onToggleExpand={handleToggleExpand}
+              onSetStatus={handleSetStatus}
+            />
+          </ScrollView>
+        ) : (
+          <NativeStatisticsScreen isDarkMode={isDarkMode} records={records} />
+        )}
+      </View>
+
+      <NativeBottomNav 
+        isDarkMode={isDarkMode} 
+        activeTab={activeScreen} 
+        onTabChange={(tab) => setActiveScreen(tab)} 
+        onExit={() => onExit?.()}
+      />
 
       {/* Global Modals outside scaled wrapper */}
       <QuranSettingsModals 

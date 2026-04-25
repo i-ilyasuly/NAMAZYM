@@ -15,6 +15,7 @@ import { SettingsScreen } from "./components/SettingsScreen";
 import { StatisticsScreen } from "./components/StatisticsScreen";
 import { QuranScreen } from "./components/QuranScreen";
 import { HomeScreen } from "./components/HomeScreen";
+import { WorldClockPage } from "./components/WorldClockPage";
 import { TestScreen } from "./components/test-native/TestScreen";
 import WallpaperGallery from "./components/WallpaperGallery";
 import { UsernameSetupModal } from "./components/auth/UsernameSetupModal";
@@ -69,8 +70,21 @@ function AppContent() {
 
       <main className={cn(
         "flex-1 flex flex-col max-w-full mx-auto w-full overflow-y-auto no-scrollbar border-x border-muted/10",
-        ctrl.activeTab === "home" || ctrl.activeTab === "quran" || ctrl.activeTab === "test" ? "p-0" : "p-4 pt-6"
+        ctrl.activeTab === "home" || ctrl.activeTab === "quran" || ctrl.activeTab === "test" ? "p-0" : "p-4 pt-6",
+        ctrl.activeTab === "test" && "fixed inset-0 z-[100] bg-background"
       )}>
+        {ctrl.activeTab === "clock" && (
+          <div className="fixed inset-0 z-[100] bg-background">
+            <button 
+              className="absolute top-4 left-4 z-[101] p-2 bg-gray-200 rounded-full"
+              onClick={() => ctrl.setActiveTab("home")}
+            >
+              Exit
+            </button>
+            <WorldClockPage />
+          </div>
+        )}
+
         {ctrl.activeTab === "home" && (
           <HomeScreen
             selectedDate={ctrl.selectedDate}
@@ -182,13 +196,14 @@ function AppContent() {
         )}
 
         {ctrl.activeTab === "test" && (
-          <TestScreen />
+          <TestScreen onExit={() => ctrl.setActiveTab("home")} />
         )}
       </main>
 
-      {!(ctrl.activeTab === "quran" && ctrl.store.isQuranImmersive) && (
+      {!(ctrl.activeTab === "quran" && ctrl.store.isQuranImmersive) && ctrl.activeTab !== "test" && (
         <BottomNav activeTab={ctrl.activeTab} onChange={(tab) => startTransition(() => ctrl.setActiveTab(tab))} />
       )}
+
 
       {/* Logout Confirmation Dialog */}
       <AlertDialog
